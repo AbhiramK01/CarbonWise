@@ -176,6 +176,26 @@ Remove-Item -Recurse -Force node_modules
 npm install
 ```
 
+**'nodemon' is not recognized (Windows):**
+
+This error occurs because `nodemon` is installed locally. Use one of these solutions:
+
+*Option 1: Use `npm start` instead (recommended for production):*
+```cmd
+npm start
+```
+
+*Option 2: Install nodemon globally:*
+```cmd
+npm install -g nodemon
+npm run dev
+```
+
+*Option 3: Use npx to run local nodemon:*
+```cmd
+npx nodemon server.js
+```
+
 **Database errors:**
 - The SQLite database is created automatically on first run
 - To reset the database, delete the `.db` file in the database folder and restart the server

@@ -148,11 +148,12 @@ router.post('/', authenticateToken, (req, res) => {
         } = req.body;
 
         const activityDescription = description || activity_type || 'Unknown activity';
-        const activityValue = value !== undefined ? value : (amount !== undefined ? amount : null);
+        const rawValue = value !== undefined ? value : (amount !== undefined ? amount : null);
+        const activityValue = rawValue !== null ? parseFloat(rawValue) : null;
         const activityDate = date || new Date().toISOString().split('T')[0];
         const activityUnit = unit || 'kg';
 
-        if (!category || activityValue === null) {
+        if (!category || activityValue === null || isNaN(activityValue)) {
             return res.status(400).json({ error: 'Category and value/amount are required' });
         }
 
@@ -198,8 +199,8 @@ router.post('/', authenticateToken, (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         const user = db.prepare('SELECT last_activity_date, streak FROM users WHERE id = ?').get(req.user.id);
         
-        let newStreak = user.streak;
-        if (user.last_activity_date !== today) {
+        let newStreak = user ? (user.streak || 0) : 0;
+        if (user && user.last_activity_date !== today) {
             const lastDate = new Date(user.last_activity_date);
             const todayDate = new Date(today);
             const diffDays = Math.floor((todayDate - lastDate) / (1000 * 60 * 60 * 24));
@@ -222,14 +223,20 @@ router.post('/', authenticateToken, (req, res) => {
         // Update goal progress based on activity
         updateGoalProgress(req.user.id, category, calcType, activityValue, emissions);
 
-        const activity = db.prepare('SELECT * FROM activities WHERE id = ?').get(result.lastInsertRowid);
+        // Get the newly created activity
+        let activity = db.prepare('SELECT * FROM activities WHERE id = ?').get(result.lastInsertRowid);
+        
+        // Fallback: if not found by id, get the most recent activity for this user
+        if (!activity) {
+            activity = db.prepare('SELECT * FROM activities WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(req.user.id);
+        }
         
         // Transform to include frontend-expected field names
-        const responseActivity = {
+        const responseActivity = activity ? {
             ...activity,
             activity_type: activity.description,
             amount: activity.value
-        };
+        } : { id: result.lastInsertRowid, category, description: activityDescription, value: activityValue };
 
         res.status(201).json({
             message: 'Activity logged successfully',

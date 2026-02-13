@@ -50,46 +50,60 @@ class DatabaseWrapper {
         const dbWrapper = this;
         
         const getLastInsertRowId = () => {
-            const result = dbWrapper.db.exec('SELECT last_insert_rowid() as id');
-            return result.length > 0 ? result[0].values[0][0] : 0;
+            try {
+                const stmt = dbWrapper.db.prepare('SELECT last_insert_rowid() as id');
+                if (stmt.step()) {
+                    const result = stmt.get()[0];
+                    stmt.free();
+                    return result;
+                }
+                stmt.free();
+                return 0;
+            } catch (e) {
+                console.error('Error getting last insert rowid:', e);
+                return 0;
+            }
+        };
+
+        // Convert params to sql.js format
+        const formatParams = (params) => {
+            if (params.length === 0) return undefined;
+            if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
+                // Named parameters - convert to sql.js format
+                const namedParams = {};
+                for (const [key, value] of Object.entries(params[0])) {
+                    // sql.js expects $key format for named params
+                    namedParams[`$${key}`] = value;
+                }
+                return namedParams;
+            }
+            // Positional params - sql.js accepts arrays directly
+            return params;
         };
         
         return {
             run: (...params) => {
                 try {
-                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
-                        // Named parameters
-                        const namedParams = {};
-                        for (const [key, value] of Object.entries(params[0])) {
-                            namedParams[`:${key}`] = value;
-                            namedParams[`@${key}`] = value;
-                            namedParams[`$${key}`] = value;
-                        }
-                        dbWrapper.db.run(sql, namedParams);
-                    } else {
-                        dbWrapper.db.run(sql, params);
+                    const stmt = dbWrapper.db.prepare(sql);
+                    const formattedParams = formatParams(params);
+                    if (formattedParams) {
+                        stmt.bind(formattedParams);
                     }
+                    stmt.step();
+                    stmt.free();
                     dbWrapper.save();
                     return { changes: dbWrapper.db.getRowsModified(), lastInsertRowid: getLastInsertRowId() };
                 } catch (err) {
+                    console.error('DB run error:', err.message, 'SQL:', sql, 'Params:', params);
                     throw err;
                 }
             },
             get: (...params) => {
                 try {
-                    let stmt;
-                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
-                        const namedParams = {};
-                        for (const [key, value] of Object.entries(params[0])) {
-                            namedParams[`:${key}`] = value;
-                            namedParams[`@${key}`] = value;
-                            namedParams[`$${key}`] = value;
-                        }
-                        stmt = dbWrapper.db.prepare(sql);
-                        stmt.bind(namedParams);
-                    } else {
-                        stmt = dbWrapper.db.prepare(sql);
-                        if (params.length > 0) stmt.bind(params);
+                    const formattedParams = formatParams(params);
+                    const stmt = dbWrapper.db.prepare(sql);
+                    if (formattedParams) {
+                        stmt.bind(formattedParams);
                     }
                     
                     if (stmt.step()) {
@@ -103,25 +117,17 @@ class DatabaseWrapper {
                     stmt.free();
                     return undefined;
                 } catch (err) {
+                    console.error('DB get error:', err.message, 'SQL:', sql, 'Params:', params);
                     throw err;
                 }
             },
             all: (...params) => {
                 try {
                     let results = [];
-                    let stmt;
-                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
-                        const namedParams = {};
-                        for (const [key, value] of Object.entries(params[0])) {
-                            namedParams[`:${key}`] = value;
-                            namedParams[`@${key}`] = value;
-                            namedParams[`$${key}`] = value;
-                        }
-                        stmt = dbWrapper.db.prepare(sql);
-                        stmt.bind(namedParams);
-                    } else {
-                        stmt = dbWrapper.db.prepare(sql);
-                        if (params.length > 0) stmt.bind(params);
+                    const formattedParams = formatParams(params);
+                    const stmt = dbWrapper.db.prepare(sql);
+                    if (formattedParams) {
+                        stmt.bind(formattedParams);
                     }
                     
                     const columns = stmt.getColumnNames();
@@ -134,6 +140,7 @@ class DatabaseWrapper {
                     stmt.free();
                     return results;
                 } catch (err) {
+                    console.error('DB all error:', err.message, 'SQL:', sql, 'Params:', params);
                     throw err;
                 }
             }

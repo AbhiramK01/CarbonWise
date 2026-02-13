@@ -124,7 +124,7 @@ carbonwise/
 ## Technologies Used
 
 - **Backend**: Node.js, Express.js
-- **Database**: SQLite (better-sqlite3)
+- **Database**: SQLite (sql.js - pure JavaScript, no native modules)
 - **Authentication**: JWT (jsonwebtoken), bcryptjs
 - **Frontend**: HTML, CSS, JavaScript
 

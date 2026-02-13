@@ -1,16 +1,164 @@
-// ===== Database Setup with SQLite =====
-const Database = require('better-sqlite3');
+// ===== Database Setup with SQLite (sql.js - pure JavaScript) =====
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
 const dbPath = path.join(__dirname, 'carbonwise.db');
-const db = new Database(dbPath);
 
-// Enable foreign keys
-db.pragma('foreign_keys = ON');
+// Create a wrapper class to mimic better-sqlite3 API
+class DatabaseWrapper {
+    constructor() {
+        this.db = null;
+        this.ready = false;
+    }
 
-// Create tables
-db.exec(`
+    async initialize() {
+        const SQL = await initSqlJs();
+        
+        // Load existing database or create new one
+        if (fs.existsSync(dbPath)) {
+            const buffer = fs.readFileSync(dbPath);
+            this.db = new SQL.Database(buffer);
+        } else {
+            this.db = new SQL.Database();
+        }
+
+        // Enable foreign keys
+        this.db.run('PRAGMA foreign_keys = ON');
+        this.ready = true;
+        return this;
+    }
+
+    // Save database to file
+    save() {
+        if (this.db) {
+            const data = this.db.export();
+            const buffer = Buffer.from(data);
+            fs.writeFileSync(dbPath, buffer);
+        }
+    }
+
+    // Execute SQL without returning results
+    exec(sql) {
+        this.db.run(sql);
+        this.save();
+    }
+
+    // Prepare a statement (returns a statement-like object)
+    prepare(sql) {
+        const dbWrapper = this;
+        
+        const getLastInsertRowId = () => {
+            const result = dbWrapper.db.exec('SELECT last_insert_rowid() as id');
+            return result.length > 0 ? result[0].values[0][0] : 0;
+        };
+        
+        return {
+            run: (...params) => {
+                try {
+                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
+                        // Named parameters
+                        const namedParams = {};
+                        for (const [key, value] of Object.entries(params[0])) {
+                            namedParams[`:${key}`] = value;
+                            namedParams[`@${key}`] = value;
+                            namedParams[`$${key}`] = value;
+                        }
+                        dbWrapper.db.run(sql, namedParams);
+                    } else {
+                        dbWrapper.db.run(sql, params);
+                    }
+                    dbWrapper.save();
+                    return { changes: dbWrapper.db.getRowsModified(), lastInsertRowid: getLastInsertRowId() };
+                } catch (err) {
+                    throw err;
+                }
+            },
+            get: (...params) => {
+                try {
+                    let stmt;
+                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
+                        const namedParams = {};
+                        for (const [key, value] of Object.entries(params[0])) {
+                            namedParams[`:${key}`] = value;
+                            namedParams[`@${key}`] = value;
+                            namedParams[`$${key}`] = value;
+                        }
+                        stmt = dbWrapper.db.prepare(sql);
+                        stmt.bind(namedParams);
+                    } else {
+                        stmt = dbWrapper.db.prepare(sql);
+                        if (params.length > 0) stmt.bind(params);
+                    }
+                    
+                    if (stmt.step()) {
+                        const columns = stmt.getColumnNames();
+                        const values = stmt.get();
+                        stmt.free();
+                        const result = {};
+                        columns.forEach((col, i) => result[col] = values[i]);
+                        return result;
+                    }
+                    stmt.free();
+                    return undefined;
+                } catch (err) {
+                    throw err;
+                }
+            },
+            all: (...params) => {
+                try {
+                    let results = [];
+                    let stmt;
+                    if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
+                        const namedParams = {};
+                        for (const [key, value] of Object.entries(params[0])) {
+                            namedParams[`:${key}`] = value;
+                            namedParams[`@${key}`] = value;
+                            namedParams[`$${key}`] = value;
+                        }
+                        stmt = dbWrapper.db.prepare(sql);
+                        stmt.bind(namedParams);
+                    } else {
+                        stmt = dbWrapper.db.prepare(sql);
+                        if (params.length > 0) stmt.bind(params);
+                    }
+                    
+                    const columns = stmt.getColumnNames();
+                    while (stmt.step()) {
+                        const values = stmt.get();
+                        const row = {};
+                        columns.forEach((col, i) => row[col] = values[i]);
+                        results.push(row);
+                    }
+                    stmt.free();
+                    return results;
+                } catch (err) {
+                    throw err;
+                }
+            }
+        };
+    }
+    
+    pragma(statement) {
+        this.db.run(`PRAGMA ${statement}`);
+    }
+
+    close() {
+        if (this.db) {
+            this.save();
+            this.db.close();
+        }
+    }
+}
+
+// Create and export the database wrapper
+const dbWrapper = new DatabaseWrapper();
+
+// Initialize the database
+const initPromise = dbWrapper.initialize().then(() => {
+    // Create tables
+    dbWrapper.exec(`
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,31 +276,35 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `);
 
-// Insert default badges
-const defaultBadges = [
-    { name: 'First Steps', description: 'Log your first activity', icon: 'fa-seedling', condition_type: 'activity_count', condition_value: 1, xp_reward: 25 },
-    { name: 'Week Warrior', description: '7-day logging streak', icon: 'fa-fire', condition_type: 'streak', condition_value: 7, xp_reward: 100 },
-    { name: 'Green Commuter', description: '10 eco-friendly trips logged', icon: 'fa-bicycle', condition_type: 'eco_trips', condition_value: 10, xp_reward: 75 },
-    { name: 'Veggie Lover', description: '5 meat-free days', icon: 'fa-leaf', condition_type: 'veggie_days', condition_value: 5, xp_reward: 50 },
-    { name: 'Carbon Champion', description: 'Reduce emissions by 50%', icon: 'fa-trophy', condition_type: 'reduction_percent', condition_value: 50, xp_reward: 200 },
-    { name: 'Planet Protector', description: 'Below global average emissions', icon: 'fa-globe', condition_type: 'below_average', condition_value: 1, xp_reward: 150 },
-    { name: 'Eco Legend', description: 'Reach Level 10', icon: 'fa-crown', condition_type: 'level', condition_value: 10, xp_reward: 300 },
-    { name: 'Renewable Hero', description: '100% green energy for a month', icon: 'fa-solar-panel', condition_type: 'renewable_month', condition_value: 1, xp_reward: 200 },
-    { name: 'Month Master', description: '30-day logging streak', icon: 'fa-calendar-check', condition_type: 'streak', condition_value: 30, xp_reward: 250 },
-    { name: 'Zero Waste Hero', description: 'Complete a zero waste week', icon: 'fa-recycle', condition_type: 'zero_waste_week', condition_value: 1, xp_reward: 175 },
-    { name: 'Consistent Tracker', description: 'Log activities for 100 days', icon: 'fa-chart-line', condition_type: 'total_days', condition_value: 100, xp_reward: 500 },
-    { name: 'Community Leader', description: 'Reach top 10 on leaderboard', icon: 'fa-users', condition_type: 'leaderboard_rank', condition_value: 10, xp_reward: 150 }
-];
+    // Insert default badges
+    const defaultBadges = [
+        { name: 'First Steps', description: 'Log your first activity', icon: 'fa-seedling', condition_type: 'activity_count', condition_value: 1, xp_reward: 25 },
+        { name: 'Week Warrior', description: '7-day logging streak', icon: 'fa-fire', condition_type: 'streak', condition_value: 7, xp_reward: 100 },
+        { name: 'Green Commuter', description: '10 eco-friendly trips logged', icon: 'fa-bicycle', condition_type: 'eco_trips', condition_value: 10, xp_reward: 75 },
+        { name: 'Veggie Lover', description: '5 meat-free days', icon: 'fa-leaf', condition_type: 'veggie_days', condition_value: 5, xp_reward: 50 },
+        { name: 'Carbon Champion', description: 'Reduce emissions by 50%', icon: 'fa-trophy', condition_type: 'reduction_percent', condition_value: 50, xp_reward: 200 },
+        { name: 'Planet Protector', description: 'Below global average emissions', icon: 'fa-globe', condition_type: 'below_average', condition_value: 1, xp_reward: 150 },
+        { name: 'Eco Legend', description: 'Reach Level 10', icon: 'fa-crown', condition_type: 'level', condition_value: 10, xp_reward: 300 },
+        { name: 'Renewable Hero', description: '100% green energy for a month', icon: 'fa-solar-panel', condition_type: 'renewable_month', condition_value: 1, xp_reward: 200 },
+        { name: 'Month Master', description: '30-day logging streak', icon: 'fa-calendar-check', condition_type: 'streak', condition_value: 30, xp_reward: 250 },
+        { name: 'Zero Waste Hero', description: 'Complete a zero waste week', icon: 'fa-recycle', condition_type: 'zero_waste_week', condition_value: 1, xp_reward: 175 },
+        { name: 'Consistent Tracker', description: 'Log activities for 100 days', icon: 'fa-chart-line', condition_type: 'total_days', condition_value: 100, xp_reward: 500 },
+        { name: 'Community Leader', description: 'Reach top 10 on leaderboard', icon: 'fa-users', condition_type: 'leaderboard_rank', condition_value: 10, xp_reward: 150 }
+    ];
 
-const insertBadge = db.prepare(`
-    INSERT OR IGNORE INTO badges (name, description, icon, condition_type, condition_value, xp_reward)
-    VALUES (@name, @description, @icon, @condition_type, @condition_value, @xp_reward)
-`);
+    const insertBadge = dbWrapper.prepare(`
+        INSERT OR IGNORE INTO badges (name, description, icon, condition_type, condition_value, xp_reward)
+        VALUES (@name, @description, @icon, @condition_type, @condition_value, @xp_reward)
+    `);
 
-for (const badge of defaultBadges) {
-    insertBadge.run(badge);
-}
+    for (const badge of defaultBadges) {
+        insertBadge.run(badge);
+    }
 
-console.log('✅ Database initialized successfully');
+    console.log('✅ Database initialized successfully');
+    return dbWrapper;
+});
 
-module.exports = db;
+// Export both the wrapper and the init promise
+module.exports = dbWrapper;
+module.exports.initPromise = initPromise;

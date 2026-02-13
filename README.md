@@ -37,8 +37,19 @@ npm install
 
 Create a `.env` file in the root directory:
 
+**macOS/Linux:**
 ```bash
 touch .env
+```
+
+**Windows (Command Prompt):**
+```cmd
+type nul > .env
+```
+
+**Windows (PowerShell):**
+```powershell
+New-Item .env -ItemType File
 ```
 
 Add the following environment variables to the `.env` file:
@@ -122,6 +133,8 @@ carbonwise/
 ### Common Issues
 
 **Port already in use:**
+
+*macOS/Linux:*
 ```bash
 # Find process using port 3000
 lsof -i :3000
@@ -129,10 +142,37 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
+*Windows (Command Prompt):*
+```cmd
+:: Find process using port 3000
+netstat -ano | findstr :3000
+:: Kill the process (replace <PID> with actual process ID)
+taskkill /PID <PID> /F
+```
+
+*Windows (PowerShell):*
+```powershell
+# Find and kill process using port 3000
+Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }
+```
+
 **Module not found errors:**
+
+*macOS/Linux:*
 ```bash
-# Remove node_modules and reinstall
 rm -rf node_modules
+npm install
+```
+
+*Windows (Command Prompt):*
+```cmd
+rmdir /s /q node_modules
+npm install
+```
+
+*Windows (PowerShell):*
+```powershell
+Remove-Item -Recurse -Force node_modules
 npm install
 ```
 

@@ -20,9 +20,9 @@ async function apiRequest(endpoint, options = {}) {
         const data = await response.json();
         
         if (!response.ok) {
-            // Only call logout for 401 on non-auth endpoints
+            // Handle auth errors (401 & 403) on non-auth endpoints
             // Auth endpoints (login/register) should show their own error messages
-            if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+            if ((response.status === 401 || response.status === 403) && !endpoint.startsWith('/auth/')) {
                 logout();
                 throw new Error('Session expired. Please login again.');
             }
@@ -1215,7 +1215,51 @@ function editActivity(id, category, description, value, unit, date) {
 }
 
 // ==================== INSIGHTS ====================
-async function loadInsights() {
+const aiLoadingMessages = [
+    'Gathering your activity history',
+    'Analyzing emission patterns',
+    'Identifying optimization areas',
+    'Generating personalized recommendations',
+    'Preparing your insights summary'
+];
+
+let aiLoadingInterval = null;
+
+function showAILoading(show = true) {
+    const overlay = document.getElementById('ai-loading-overlay');
+    const refreshBtn = document.querySelector('.refresh-insights-btn');
+    const statusEl = document.getElementById('ai-loading-status');
+    
+    if (overlay) {
+        overlay.style.display = show ? 'flex' : 'none';
+    }
+    
+    if (refreshBtn) {
+        if (show) {
+            refreshBtn.classList.add('loading');
+            refreshBtn.disabled = true;
+        } else {
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+        }
+    }
+    
+    // Cycle through loading messages
+    if (show && statusEl) {
+        let messageIndex = 0;
+        statusEl.textContent = aiLoadingMessages[0];
+        
+        aiLoadingInterval = setInterval(() => {
+            messageIndex = (messageIndex + 1) % aiLoadingMessages.length;
+            statusEl.textContent = aiLoadingMessages[messageIndex];
+        }, 3000);
+    } else if (aiLoadingInterval) {
+        clearInterval(aiLoadingInterval);
+        aiLoadingInterval = null;
+    }
+}
+
+async function loadInsights(forceRefresh = false) {
     const container = document.querySelector('#insights .insights-grid');
     if (!container) return;
     
@@ -1224,25 +1268,59 @@ async function loadInsights() {
         return;
     }
     
-    container.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Analyzing your data...</div>';
+    // Show the AI loading overlay for force refresh or initial load
+    showAILoading(true);
+    container.innerHTML = '<div class="loading-placeholder"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
     
     try {
-        const data = await apiRequest('/insights');
+        const url = forceRefresh ? '/insights?refresh=true' : '/insights';
+        const data = await apiRequest(url);
+        showAILoading(false);
         renderInsights(data);
     } catch (error) {
         console.error('Failed to load insights:', error);
+        showAILoading(false);
         container.innerHTML = '<div class="empty-state"><p>Failed to load insights. Please try again.</p></div>';
     }
 }
 
 function renderInsights(data) {
+    // Render statistics first
+    if (data.stats) {
+        renderInsightStats(data.stats);
+    }
+
     // Update AI summary section
     const summaryEl = document.querySelector('.ai-summary-text');
     if (summaryEl && data.aiSummary) {
-        summaryEl.innerHTML = data.aiSummary.summary || 'Log more activities to get personalized insights!';
+        let summaryHtml = data.aiSummary.summary || 'Log more activities to get personalized insights!';
+        
+        // Add AI badge if insights are AI-generated
+        if (data.source === 'ai') {
+            summaryHtml = `<span class="ai-badge"><i class="fas fa-robot"></i> AI</span> ${summaryHtml}`;
+        }
+        
+        summaryEl.innerHTML = summaryHtml;
     }
     
-    // Update insights grid
+    // Update encouragement if available
+    const encouragementEl = document.querySelector('.ai-encouragement');
+    if (encouragementEl && data.encouragement) {
+        encouragementEl.innerHTML = data.encouragement;
+        encouragementEl.style.display = 'block';
+    }
+    
+    // Update top insight highlight
+    if (data.topInsight) {
+        const topInsightEl = document.querySelector('.top-insight');
+        if (topInsightEl) {
+            const topText = typeof data.topInsight === 'string' ? data.topInsight : data.topInsight.title || data.topInsight.description;
+            topInsightEl.innerHTML = `<i class="fas fa-star"></i> <strong>Top Recommendation:</strong> ${topText}`;
+            topInsightEl.style.display = 'block';
+        }
+    }
+    
+    // Update insights grid with enhanced cards
     const container = document.querySelector('#insights .insights-grid');
     if (!container || !data.insights) return;
     
@@ -1250,25 +1328,276 @@ function renderInsights(data) {
         container.innerHTML = '<div class="empty-state"><p>Log more activities to get personalized insights!</p></div>';
         return;
     }
+
+    // Calculate max savings for visual scaling
+    const maxSavings = Math.max(...data.insights.map(i => i.potentialSavings || 0), 50);
     
-    container.innerHTML = data.insights.map(insight => `
-        <div class="insight-card ${insight.category}">
+    container.innerHTML = data.insights.map((insight, index) => {
+        const savingsPercent = insight.potentialSavings ? Math.min((insight.potentialSavings / maxSavings) * 100, 100) : 0;
+        const categoryData = data.stats?.breakdown?.find(b => b.category === insight.category);
+        
+        return `
+        <div class="insight-card ${insight.category}" data-insight-id="${insight.id || index}">
             <div class="insight-header">
                 <div class="insight-icon">
                     <i class="fas ${getInsightIcon(insight.category)}"></i>
                 </div>
-                <span class="insight-category">${insight.category}</span>
+                <span class="insight-category">${capitalizeFirst(insight.category)}</span>
+                ${insight.potentialSavings >= 20 ? '<span class="high-impact-badge"><i class="fas fa-bolt"></i> High Impact</span>' : ''}
             </div>
             <h4>${insight.title}</h4>
             <p>${insight.description}</p>
+            
+            ${categoryData ? `
+            <div class="insight-stats">
+                <div class="insight-stat">
+                    <div class="insight-stat-value">${categoryData.emissions.toFixed(1)}</div>
+                    <div class="insight-stat-label">kg CO₂ this month</div>
+                </div>
+                <div class="insight-stat">
+                    <div class="insight-stat-value">${categoryData.percentage}%</div>
+                    <div class="insight-stat-label">of your footprint</div>
+                </div>
+            </div>
+            ` : ''}
+            
             ${insight.potentialSavings ? `
                 <div class="insight-savings">
                     <i class="fas fa-leaf"></i>
-                    Save up to ${insight.potentialSavings} kg CO₂/month
+                    <span>Save up to <strong>${insight.potentialSavings} kg</strong> CO₂/month</span>
+                </div>
+                <div class="savings-bar">
+                    <div class="savings-bar-fill" style="width: ${savingsPercent}%"></div>
                 </div>
             ` : ''}
+            
+            <div class="insight-actions">
+                ${getActionChips(insight.category)}
+            </div>
         </div>
+    `}).join('');
+    
+    // Render trends
+    renderTrends(data.trends || []);
+    
+    // Add refresh button handler
+    const refreshBtn = document.querySelector('.refresh-insights-btn');
+    if (refreshBtn) {
+        refreshBtn.onclick = () => loadInsights(true);
+    }
+}
+
+function renderInsightStats(stats) {
+    // Monthly emissions ring
+    const monthlyValue = document.getElementById('monthly-emissions-value');
+    if (monthlyValue) {
+        monthlyValue.textContent = stats.totals?.monthly?.toFixed(1) || '0';
+    }
+    
+    // Animate ring progress (max 100kg for full ring)
+    const ringFill = document.querySelector('#monthly-ring .ring-fill');
+    if (ringFill) {
+        const percentage = Math.min((stats.totals?.monthly || 0) / 100 * 100, 100);
+        ringFill.setAttribute('stroke-dasharray', `${percentage}, 100`);
+    }
+    
+    // Weekly change
+    const weeklyChange = document.getElementById('weekly-change');
+    if (weeklyChange && stats.comparison) {
+        const change = stats.comparison.weeklyChange;
+        const isPositive = change <= 0;
+        weeklyChange.textContent = `${change > 0 ? '+' : ''}${change}% vs last week`;
+        weeklyChange.className = `stat-comparison ${isPositive ? 'positive' : 'negative'}`;
+    }
+    
+    // Days active
+    const daysActive = document.getElementById('days-active');
+    if (daysActive) {
+        daysActive.textContent = stats.totals?.daysActive || 0;
+    }
+    
+    const activityCount = document.getElementById('activity-count');
+    if (activityCount) {
+        activityCount.textContent = `${stats.totals?.activityCount || 0} activities logged`;
+    }
+    
+    // vs Global
+    const vsGlobalValue = document.getElementById('vs-global-value');
+    const vsGlobalText = document.getElementById('vs-global-text');
+    const vsGlobalIcon = document.getElementById('vs-global-icon');
+    
+    if (vsGlobalValue && stats.comparison) {
+        const vsGlobal = stats.comparison.vsGlobal;
+        vsGlobalValue.textContent = `${vsGlobal > 0 ? '+' : ''}${vsGlobal}%`;
+        
+        if (vsGlobalText) {
+            vsGlobalText.textContent = stats.comparison.isAboveAverage 
+                ? 'Above global average' 
+                : 'Below global average! 🎉';
+        }
+        
+        if (vsGlobalIcon) {
+            vsGlobalIcon.className = stats.comparison.isAboveAverage 
+                ? 'stat-icon-large red' 
+                : 'stat-icon-large green';
+        }
+    }
+    
+    // Category breakdown chart
+    renderCategoryBreakdown(stats.breakdown || []);
+}
+
+let categoryPieChart = null;
+const CATEGORY_COLORS = {
+    transport: '#3498db',
+    electricity: '#f39c12',
+    energy: '#f39c12',
+    diet: '#27ae60',
+    food: '#27ae60',
+    heating: '#e74c3c',
+    waste: '#9b59b6'
+};
+
+function renderCategoryBreakdown(breakdown) {
+    const chartCanvas = document.getElementById('category-pie-chart');
+    const legendContainer = document.querySelector('#insights .breakdown-legend');
+    
+    if (!chartCanvas) return;
+    
+    if (breakdown.length === 0) {
+        if (legendContainer) legendContainer.innerHTML = '<p class="empty-state">No data yet</p>';
+        return;
+    }
+    
+    // Prepare chart data
+    const labels = breakdown.map(b => capitalizeFirst(b.category));
+    const values = breakdown.map(b => b.emissions);
+    const colors = breakdown.map(b => CATEGORY_COLORS[b.category] || '#95a5a6');
+    
+    // Destroy existing chart
+    if (categoryPieChart) {
+        categoryPieChart.destroy();
+    }
+    
+    // Create doughnut chart
+    categoryPieChart = new Chart(chartCanvas, {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: colors,
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            cutout: '65%',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => `${context.label}: ${context.raw.toFixed(1)} kg CO₂`
+                    }
+                }
+            }
+        }
+    });
+    
+    // Render legend with progress bars
+    if (legendContainer) {
+        legendContainer.innerHTML = breakdown.map(b => `
+            <div class="legend-item">
+                <div class="legend-color" style="background: ${CATEGORY_COLORS[b.category] || '#95a5a6'}"></div>
+                <div class="legend-info">
+                    <span class="legend-label">${capitalizeFirst(b.category)}</span>
+                    <div class="legend-bar">
+                        <div class="legend-bar-fill" style="width: ${b.percentage}%; background: ${CATEGORY_COLORS[b.category] || '#95a5a6'}"></div>
+                    </div>
+                    <span class="legend-value">${b.emissions.toFixed(1)} kg (${b.percentage}%)</span>
+                </div>
+            </div>
     `).join('');
+    }
+}
+
+function getActionChips(category) {
+    const actions = {
+        transport: [
+            { icon: 'fa-bicycle', label: 'Try cycling' },
+            { icon: 'fa-train', label: 'Use transit' },
+            { icon: 'fa-users', label: 'Carpool' }
+        ],
+        electricity: [
+            { icon: 'fa-solar-panel', label: 'Go solar' },
+            { icon: 'fa-lightbulb', label: 'Use LEDs' },
+            { icon: 'fa-power-off', label: 'Unplug devices' }
+        ],
+        energy: [
+            { icon: 'fa-solar-panel', label: 'Go solar' },
+            { icon: 'fa-lightbulb', label: 'Use LEDs' },
+            { icon: 'fa-power-off', label: 'Unplug devices' }
+        ],
+        diet: [
+            { icon: 'fa-leaf', label: 'Try meatless' },
+            { icon: 'fa-store', label: 'Buy local' },
+            { icon: 'fa-recycle', label: 'Reduce waste' }
+        ],
+        food: [
+            { icon: 'fa-leaf', label: 'Try meatless' },
+            { icon: 'fa-store', label: 'Buy local' },
+            { icon: 'fa-recycle', label: 'Reduce waste' }
+        ],
+        waste: [
+            { icon: 'fa-recycle', label: 'Recycle more' },
+            { icon: 'fa-seedling', label: 'Compost' },
+            { icon: 'fa-shopping-bag', label: 'Reusable bags' }
+        ]
+    };
+    
+    const categoryActions = actions[category] || actions.transport;
+    return categoryActions.map(a => 
+        `<button class="action-chip" onclick="showActionTip('${a.label}')">
+            <i class="fas ${a.icon}"></i> ${a.label}
+        </button>`
+    ).join('');
+}
+
+function showActionTip(action) {
+    showToast(`💡 Tip: ${action} can help reduce your carbon footprint!`, 'info');
+}
+
+function renderTrends(trends) {
+    const container = document.getElementById('trend-cards');
+    if (!container) return;
+    
+    if (trends.length === 0) {
+        container.innerHTML = '<p class="empty-state">Log more activities to see your trends!</p>';
+        return;
+    }
+    
+    container.innerHTML = trends.map(trend => {
+        const trendClass = trend.trend === 'positive' ? 'positive' : 
+                          trend.trend === 'negative' ? 'negative' : 'neutral';
+        const trendIcon = trend.trend === 'positive' ? 'fa-arrow-down' :
+                         trend.trend === 'negative' ? 'fa-arrow-up' : 'fa-minus';
+        
+        return `
+            <div class="trend-card ${trendClass}">
+                <i class="fas ${trendIcon}"></i>
+                <div class="trend-info">
+                    <h4>${capitalizeFirst(trend.category)} ${trend.changePercent > 0 ? 'up' : trend.changePercent < 0 ? 'down' : 'stable'} ${Math.abs(trend.changePercent)}%</h4>
+                    <p>${trend.message}</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function getInsightIcon(category) {

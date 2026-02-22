@@ -162,9 +162,11 @@ router.post('/', authenticateToken, (req, res) => {
         const calcType = subType || detectActivityType(category, activityDescription);
         switch (category) {
             case 'transport':
-                if (calcType === 'car' && fuelType) {
-                    emissions = activityValue * (EMISSION_FACTORS.transport.car[fuelType] || 0.21);
-                } else if (calcType in EMISSION_FACTORS.transport) {
+                if (calcType === 'car') {
+                    // Car has nested fuel types - default to petrol if not specified
+                    const fuelFactor = EMISSION_FACTORS.transport.car[fuelType] || EMISSION_FACTORS.transport.car.petrol;
+                    emissions = activityValue * fuelFactor;
+                } else if (calcType in EMISSION_FACTORS.transport && typeof EMISSION_FACTORS.transport[calcType] === 'number') {
                     // Use 'in' operator to check for property existence, not truthiness
                     // This allows bike/walk with 0 emissions to work correctly
                     emissions = activityValue * EMISSION_FACTORS.transport[calcType];
@@ -270,9 +272,10 @@ router.put('/:id', authenticateToken, (req, res) => {
             
             switch (cat) {
                 case 'transport':
-                    if (subType === 'car' && fuelType) {
-                        emissions = val * (EMISSION_FACTORS.transport.car[fuelType] || 0.21);
-                    } else if (EMISSION_FACTORS.transport[subType]) {
+                    if (subType === 'car') {
+                        const fuelFactor = EMISSION_FACTORS.transport.car[fuelType] || EMISSION_FACTORS.transport.car.petrol;
+                        emissions = val * fuelFactor;
+                    } else if (EMISSION_FACTORS.transport[subType] && typeof EMISSION_FACTORS.transport[subType] === 'number') {
                         emissions = val * EMISSION_FACTORS.transport[subType];
                     } else {
                         emissions = val * 0.21;

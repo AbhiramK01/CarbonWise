@@ -3,32 +3,186 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
-const { generateInsights, identifyTrends, generateAISummary } = require('../utils/insights-engine');
+const { generateInsights, identifyTrends, generateAISummary, getInsights, generateAIInsights } = require('../utils/insights-engine');
 
-// Get all insights for user
-router.get('/', authenticateToken, (req, res) => {
+// Get all insights for user (AI-powered with fallback)
+router.get('/', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { limit = 10 } = req.query;
+        const { limit = 10, refresh = 'false' } = req.query;
+        const forceRefresh = refresh === 'true';
 
-        // Generate fresh insights based on user data
-        const insights = generateInsights(userId);
+        // Get AI-powered insights (with caching and fallback)
+        const insightsData = await getInsights(userId, forceRefresh);
 
-        // Get AI summary
-        const aiSummary = generateAISummary(userId);
-
-        // Get trends
-        const trends = identifyTrends(userId);
+        // Get enhanced statistics
+        const stats = getEnhancedStats(userId);
 
         res.json({
-            aiSummary,
-            insights: insights.slice(0, parseInt(limit)),
-            trends,
-            generatedAt: new Date().toISOString()
+            source: insightsData.source,
+            model: insightsData.model || null,
+            aiSummary: {
+                summary: insightsData.summary
+            },
+            topInsight: insightsData.topInsight,
+            insights: (insightsData.insights || []).slice(0, parseInt(limit)),
+            trends: insightsData.trends || identifyTrends(userId),
+            encouragement: insightsData.encouragement,
+            stats: stats,
+            generatedAt: insightsData.generatedAt
         });
     } catch (error) {
         console.error('Insights error:', error);
         res.status(500).json({ error: 'Failed to generate insights', message: error.message });
+    }
+});
+
+// Get enhanced statistics for insights
+function getEnhancedStats(userId) {
+    const today = new Date();
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    // Normalize category names
+    const normalizeCategory = (cat) => {
+        const lower = (cat || '').toLowerCase();
+        if (lower === 'energy' || lower === 'electricity') return 'electricity';
+        if (lower === 'food' || lower === 'diet') return 'diet';
+        return lower;
+    };
+
+    // Category breakdown (raw from DB)
+    const rawBreakdown = db.prepare(`
+        SELECT category, 
+               COUNT(*) as count,
+               SUM(emissions) as total_emissions,
+               AVG(emissions) as avg_emissions
+        FROM activities 
+        WHERE user_id = ? AND date >= ?
+        GROUP BY category
+        ORDER BY total_emissions DESC
+    `).all(userId, monthAgo.toISOString().split('T')[0]);
+
+    // Merge categories (energy → electricity, food → diet)
+    const mergedMap = new Map();
+    for (const c of rawBreakdown) {
+        const normalizedCat = normalizeCategory(c.category);
+        if (mergedMap.has(normalizedCat)) {
+            const existing = mergedMap.get(normalizedCat);
+            existing.count += c.count;
+            existing.total_emissions += c.total_emissions || 0;
+        } else {
+            mergedMap.set(normalizedCat, {
+                category: normalizedCat,
+                count: c.count,
+                total_emissions: c.total_emissions || 0
+            });
+        }
+    }
+
+    const categoryBreakdown = Array.from(mergedMap.values());
+    categoryBreakdown.sort((a, b) => b.total_emissions - a.total_emissions);
+
+    const totalEmissions = categoryBreakdown.reduce((sum, c) => sum + c.total_emissions, 0);
+
+    // Add percentages and format
+    const breakdown = categoryBreakdown.map(c => ({
+        category: c.category,
+        count: c.count,
+        emissions: parseFloat(c.total_emissions.toFixed(2)),
+        avgPerActivity: parseFloat((c.total_emissions / c.count).toFixed(2)),
+        percentage: totalEmissions > 0 ? Math.round((c.total_emissions / totalEmissions) * 100) : 0
+    }));
+
+    // Weekly comparison
+    const thisWeekEmissions = db.prepare(`
+        SELECT COALESCE(SUM(emissions), 0) as total FROM activities 
+        WHERE user_id = ? AND date >= ?
+    `).get(userId, weekAgo.toISOString().split('T')[0]).total;
+
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const lastWeekEmissions = db.prepare(`
+        SELECT COALESCE(SUM(emissions), 0) as total FROM activities 
+        WHERE user_id = ? AND date >= ? AND date < ?
+    `).get(userId, twoWeeksAgo.toISOString().split('T')[0], weekAgo.toISOString().split('T')[0]).total;
+
+    const weeklyChange = lastWeekEmissions > 0 
+        ? Math.round(((thisWeekEmissions - lastWeekEmissions) / lastWeekEmissions) * 100) 
+        : 0;
+
+    // Activity patterns
+    const activityCount = db.prepare(`
+        SELECT COUNT(*) as count FROM activities WHERE user_id = ? AND date >= ?
+    `).get(userId, monthAgo.toISOString().split('T')[0]).count;
+
+    const daysActive = db.prepare(`
+        SELECT COUNT(DISTINCT date) as days FROM activities WHERE user_id = ? AND date >= ?
+    `).get(userId, monthAgo.toISOString().split('T')[0]).days;
+
+    // Best performing category (lowest per-activity emissions)
+    const bestCategory = breakdown.length > 0 
+        ? breakdown.reduce((best, c) => c.avgPerActivity < best.avgPerActivity ? c : best, breakdown[0])
+        : null;
+
+    // Highest impact category
+    const highestImpact = breakdown.length > 0 ? breakdown[0] : null;
+
+    // Daily average
+    const dailyAverage = daysActive > 0 ? (totalEmissions / daysActive) : 0;
+
+    // Global average comparison (4.8 tons/year = 13.15 kg/day)
+    const globalDailyAvg = 13.15;
+    const vsGlobalPercent = globalDailyAvg > 0 
+        ? Math.round(((dailyAverage - globalDailyAvg) / globalDailyAvg) * 100) 
+        : 0;
+
+    return {
+        breakdown,
+        totals: {
+            monthly: parseFloat(totalEmissions.toFixed(2)),
+            weekly: parseFloat(thisWeekEmissions.toFixed(2)),
+            dailyAverage: parseFloat(dailyAverage.toFixed(2)),
+            activityCount,
+            daysActive
+        },
+        comparison: {
+            weeklyChange,
+            vsGlobal: vsGlobalPercent,
+            isAboveAverage: dailyAverage > globalDailyAvg
+        },
+        highlights: {
+            highestImpact: highestImpact ? {
+                category: highestImpact.category,
+                emissions: highestImpact.emissions,
+                percentage: highestImpact.percentage
+            } : null,
+            bestCategory: bestCategory ? {
+                category: bestCategory.category,
+                avgPerActivity: bestCategory.avgPerActivity
+            } : null
+        }
+    };
+}
+
+// Force refresh AI insights
+router.post('/refresh', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Force regenerate AI insights
+        const insightsData = await getInsights(userId, true);
+
+        res.json({
+            message: 'Insights refreshed',
+            source: insightsData.source,
+            generatedAt: insightsData.generatedAt
+        });
+    } catch (error) {
+        console.error('Refresh insights error:', error);
+        res.status(500).json({ error: 'Failed to refresh insights', message: error.message });
     }
 });
 

@@ -594,119 +594,101 @@
                 <p>AI-powered recommendations to reduce your carbon footprint</p>
             </div>
 
+            <!-- Statistics Overview -->
+            <div class="insights-stats-grid" id="insights-stats">
+                <div class="insight-stat-card">
+                    <div class="stat-ring" id="monthly-ring">
+                        <svg viewBox="0 0 36 36">
+                            <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path class="ring-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                        <div class="ring-value">
+                            <span id="monthly-emissions-value">0</span>
+                            <small>kg</small>
+                        </div>
+                    </div>
+                    <h4>Monthly Total</h4>
+                    <p class="stat-comparison" id="weekly-change">-- vs last week</p>
+                </div>
+                <div class="insight-stat-card">
+                    <div class="stat-icon-large green">
+                        <i class="fas fa-calendar-check"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-big" id="days-active">0</span>
+                        <h4>Days Active</h4>
+                    </div>
+                    <p class="stat-sub" id="activity-count">0 activities logged</p>
+                </div>
+                <div class="insight-stat-card highlight">
+                    <div class="stat-icon-large" id="vs-global-icon">
+                        <i class="fas fa-globe-americas"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-big" id="vs-global-value">--%</span>
+                        <h4>vs Global Avg</h4>
+                    </div>
+                    <p class="stat-sub" id="vs-global-text">Calculate to compare</p>
+                </div>
+            </div>
+
+            <!-- Category Breakdown Chart -->
+            <div class="category-breakdown-card">
+                <h3><i class="fas fa-chart-pie"></i> Emissions by Category</h3>
+                <div class="breakdown-content">
+                    <div class="breakdown-chart">
+                        <canvas id="category-pie-chart"></canvas>
+                    </div>
+                    <div class="breakdown-legend">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Summary Card -->
+            <div class="ai-summary-card">
+                <div class="ai-summary-header">
+                    <div class="ai-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <h3>AI Analysis</h3>
+                    <button class="refresh-insights-btn" title="Refresh insights">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                
+                <!-- AI Loading Overlay -->
+                <div class="ai-loading-overlay" id="ai-loading-overlay" style="display: none;">
+                    <div class="ai-loading-content">
+                        <div class="ai-spinner">
+                            <div class="spinner-ring"></div>
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <h4 class="ai-loading-title">AI is analyzing your data...</h4>
+                        <p class="ai-loading-status" id="ai-loading-status">Gathering your activity history</p>
+                        <div class="ai-loading-dots">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <p class="ai-summary-text">Log activities to get personalized AI insights...</p>
+                <p class="top-insight" style="display: none;"></p>
+                <p class="ai-encouragement" style="display: none;"></p>
+            </div>
+
+            <!-- Dynamic Insights Grid -->
+            <h3 class="insights-section-title"><i class="fas fa-lightbulb"></i> Actionable Recommendations</h3>
             <div class="insights-grid">
-                <!-- AI Analysis Card -->
-                <div class="insight-card featured">
-                    <div class="insight-icon ai">
-                        <i class="fas fa-brain"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>AI Analysis</h3>
-                        <p>Based on your activity patterns, your highest emission source is <strong>transportation</strong>, accounting for 45% of your footprint. You could reduce emissions by 30% by switching to public transit twice a week.</p>
-                        <div class="insight-impact">
-                            <span class="impact-label">Potential Savings</span>
-                            <span class="impact-value">-180 kg CO₂/month</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Recommendation Cards -->
-                <div class="insight-card">
-                    <div class="insight-icon energy">
-                        <i class="fas fa-solar-panel"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>Switch to Renewable Energy</h3>
-                        <p>Your area has multiple green energy providers. Switching could reduce your electricity emissions by up to 80%.</p>
-                        <div class="insight-impact">
-                            <span class="impact-value">-45 kg CO₂/month</span>
-                        </div>
-                    </div>
-                    <button class="btn-outline">Learn More</button>
-                </div>
-
-                <div class="insight-card">
-                    <div class="insight-icon transport">
-                        <i class="fas fa-bicycle"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>Try Active Commuting</h3>
-                        <p>You live 5km from work. Cycling just 2 days/week would save significant emissions and improve health.</p>
-                        <div class="insight-impact">
-                            <span class="impact-value">-25 kg CO₂/month</span>
-                        </div>
-                    </div>
-                    <button class="btn-outline">Learn More</button>
-                </div>
-
-                <div class="insight-card">
-                    <div class="insight-icon food">
-                        <i class="fas fa-carrot"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>Meatless Mondays</h3>
-                        <p>Reducing meat consumption by just one day per week can significantly lower your dietary carbon footprint.</p>
-                        <div class="insight-impact">
-                            <span class="impact-value">-20 kg CO₂/month</span>
-                        </div>
-                    </div>
-                    <button class="btn-outline">Learn More</button>
-                </div>
-
-                <div class="insight-card">
-                    <div class="insight-icon waste">
-                        <i class="fas fa-recycle"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>Start Composting</h3>
-                        <p>Composting food waste can reduce methane emissions from landfills and create nutrient-rich soil.</p>
-                        <div class="insight-impact">
-                            <span class="impact-value">-8 kg CO₂/month</span>
-                        </div>
-                    </div>
-                    <button class="btn-outline">Learn More</button>
-                </div>
-
-                <div class="insight-card">
-                    <div class="insight-icon shopping">
-                        <i class="fas fa-shopping-bag"></i>
-                    </div>
-                    <div class="insight-content">
-                        <h3>Reduce Single-Use Plastics</h3>
-                        <p>Bring reusable bags and containers. Small changes in shopping habits add up to big impact.</p>
-                        <div class="insight-impact">
-                            <span class="impact-value">-5 kg CO₂/month</span>
-                        </div>
-                    </div>
-                    <button class="btn-outline">Learn More</button>
-                </div>
+                <!-- Insights will be loaded dynamically -->
+                <div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading insights...</div>
             </div>
 
             <!-- Trend Analysis -->
             <div class="trend-section">
-                <h2>Your Emission Trends</h2>
-                <div class="trend-cards">
-                    <div class="trend-card positive">
-                        <i class="fas fa-arrow-down"></i>
-                        <div class="trend-info">
-                            <h4>Transport emissions down 15%</h4>
-                            <p>Great job using public transit more often!</p>
-                        </div>
-                    </div>
-                    <div class="trend-card neutral">
-                        <i class="fas fa-minus"></i>
-                        <div class="trend-info">
-                            <h4>Diet emissions stable</h4>
-                            <p>Consider trying more plant-based meals</p>
-                        </div>
-                    </div>
-                    <div class="trend-card negative">
-                        <i class="fas fa-arrow-up"></i>
-                        <div class="trend-info">
-                            <h4>Electricity usage up 10%</h4>
-                            <p>Check for energy-hungry appliances</p>
-                        </div>
-                    </div>
+                <h2><i class="fas fa-chart-line"></i> Your Emission Trends</h2>
+                <div class="trend-cards" id="trend-cards">
+                    <!-- Trends will be loaded dynamically -->
                 </div>
             </div>
         </section>

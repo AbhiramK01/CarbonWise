@@ -1,7 +1,9 @@
 // ===== ML Insights Engine =====
 // Rule-based recommendation system with pattern analysis
+// Enhanced with Ollama LLM for AI-powered insights
 
 const db = require('../database/db');
+const ollama = require('./ollama');
 
 // Insight templates with conditions
 const INSIGHT_TEMPLATES = {
@@ -43,42 +45,42 @@ const INSIGHT_TEMPLATES = {
             category: 'transport'
         }
     ],
-    energy: [
+    electricity: [
         {
             id: 'switch-renewable',
-            title: 'Switch to Renewable Energy',
-            description: 'Your area has green energy providers available. Switching could reduce your electricity emissions by up to 90%.',
+            title: 'Go Renewable Now',
+            description: 'Switch to a green energy provider - cuts your electricity emissions by 85% instantly.',
             condition: (data) => data.energySource !== 'renewable' && data.electricityEmissions > 20,
             calculateSavings: (data) => data.electricityEmissions * 0.85,
             priority: 9,
-            category: 'energy'
+            category: 'electricity'
         },
         {
             id: 'reduce-standby',
-            title: 'Eliminate Standby Power',
-            description: 'Electronic devices on standby can account for 10% of electricity use. Use power strips to easily turn them off.',
+            title: 'Kill Standby Power',
+            description: 'Devices on standby eat 10% of your electricity. Use power strips to cut them dead.',
             condition: (data) => data.electricityUsage > 300,
             calculateSavings: (data) => data.electricityEmissions * 0.1,
             priority: 6,
-            category: 'energy'
+            category: 'electricity'
         },
         {
             id: 'led-lighting',
-            title: 'Switch to LED Lighting',
-            description: 'LED bulbs use 75% less energy than incandescent bulbs and last 25 times longer.',
+            title: 'Switch to LEDs',
+            description: 'LED bulbs use 75% less power. Easy swap, big impact.',
             condition: (data) => data.electricityUsage > 250,
             calculateSavings: (data) => data.electricityEmissions * 0.05,
             priority: 5,
-            category: 'energy'
+            category: 'electricity'
         },
         {
             id: 'smart-thermostat',
-            title: 'Install a Smart Thermostat',
-            description: 'Optimizing your heating schedule can reduce energy use by 10-15% without sacrificing comfort.',
+            title: 'Get a Smart Thermostat',
+            description: 'Auto-adjust heating = 10-15% energy savings. Set it and forget it.',
             condition: (data) => data.heatingEmissions > 30,
             calculateSavings: (data) => data.heatingEmissions * 0.12,
             priority: 7,
-            category: 'energy'
+            category: 'electricity'
         }
     ],
     diet: [
@@ -164,6 +166,20 @@ function analyzeUserData(userId) {
         WHERE user_id = ? AND date >= ?
     `).all(userId, monthAgoStr);
 
+    // Normalize category names (merge similar categories)
+    const normalizeCategory = (cat) => {
+        const lower = cat.toLowerCase();
+        if (lower === 'energy' || lower === 'electricity') return 'electricity';
+        if (lower === 'food' || lower === 'diet') return 'diet';
+        return lower;
+    };
+
+    // Track which categories have logged data (normalized)
+    const categoriesWithData = new Set();
+    activities.forEach(a => categoriesWithData.add(normalizeCategory(a.category)));
+    data.categoriesWithData = Array.from(categoriesWithData);
+    data.activityCount = activities.length;
+
     // Get calculator profile
     const profile = db.prepare(`
         SELECT * FROM calculator_profiles WHERE user_id = ?
@@ -192,23 +208,27 @@ function analyzeUserData(userId) {
         .filter(a => a.description.toLowerCase().includes('flight') || a.description.toLowerCase().includes('plane'))
         .reduce((sum, a) => sum + a.emissions, 0);
     data.transportEmissions = transportActivities.reduce((sum, a) => sum + a.emissions, 0);
+    data.hasTransportData = transportActivities.length > 0;
 
-    // Analyze electricity
-    const electricityActivities = activities.filter(a => a.category === 'electricity');
+    // Analyze electricity (includes 'energy' category)
+    const electricityActivities = activities.filter(a => a.category === 'electricity' || a.category === 'energy');
     data.electricityEmissions = electricityActivities.reduce((sum, a) => sum + a.emissions, 0);
     data.electricityUsage = electricityActivities.reduce((sum, a) => sum + a.value, 0);
-    data.energySource = profile?.energy_source || 'mixed';
+    data.energySource = profile?.energy_source || null;
+    data.hasElectricityData = electricityActivities.length > 0;
 
     // Analyze heating
     const heatingActivities = activities.filter(a => a.category === 'heating');
     data.heatingEmissions = heatingActivities.reduce((sum, a) => sum + a.emissions, 0);
+    data.hasHeatingData = heatingActivities.length > 0;
 
     // Analyze diet
-    const dietActivities = activities.filter(a => a.category === 'diet');
+    const dietActivities = activities.filter(a => a.category === 'diet' || a.category === 'food');
     data.dietEmissions = dietActivities.reduce((sum, a) => sum + a.emissions, 0);
-    data.dietType = profile?.diet_type || 'average';
+    data.dietType = profile?.diet_type || null;
     data.localFood = profile?.local_food || false;
     data.lowFoodWaste = profile?.low_food_waste || false;
+    data.hasDietData = dietActivities.length > 0;
 
     // Analyze waste
     const wasteActivities = activities.filter(a => a.category === 'waste');
@@ -219,9 +239,11 @@ function analyzeUserData(userId) {
                           (profile?.recycle_glass ? 1 : 0) + 
                           (profile?.recycle_metal ? 1 : 0);
     data.singleUseLevel = profile?.single_use || 'medium';
+    data.hasWasteData = wasteActivities.length > 0;
 
     // Calculate totals
     data.totalEmissions = activities.reduce((sum, a) => sum + a.emissions, 0);
+    data.hasAnyData = activities.length > 0;
 
     return data;
 }
@@ -231,9 +253,55 @@ function generateInsights(userId) {
     const userData = analyzeUserData(userId);
     const insights = [];
 
-    // Check all insight templates
+    // If no data, return helpful getting-started tips
+    if (!userData.hasAnyData) {
+        return [
+            {
+                id: 'get-started-transport',
+                title: 'Start Tracking Transport',
+                description: 'Log your commute, car trips, and transit to see your transport emissions.',
+                category: 'transport',
+                potentialSavings: 0,
+                priority: 10
+            },
+            {
+                id: 'get-started-electricity',
+                title: 'Track Your Electricity',
+                description: 'Add your electricity usage to see how home energy impacts your footprint.',
+                category: 'electricity',
+                potentialSavings: 0,
+                priority: 9
+            },
+            {
+                id: 'get-started-diet',
+                title: 'Log Your Meals',
+                description: 'Track dietary choices to see how food impacts your carbon footprint.',
+                category: 'diet',
+                potentialSavings: 0,
+                priority: 8
+            }
+        ];
+    }
+
+    // Only check templates for categories with data
     for (const category of Object.keys(INSIGHT_TEMPLATES)) {
+        // Map category to data flag
+        const categoryDataMap = {
+            'transport': userData.hasTransportData,
+            'electricity': userData.hasElectricityData || userData.hasHeatingData,
+            'diet': userData.hasDietData,
+            'waste': userData.hasWasteData
+        };
+
+        // Skip categories without logged data
+        if (!categoryDataMap[category]) continue;
+
+        // Track if we've added an insight for this category (one per category max)
+        let categoryInsightAdded = false;
+
         for (const template of INSIGHT_TEMPLATES[category]) {
+            if (categoryInsightAdded) break; // Only one insight per category
+            
             try {
                 if (template.condition(userData)) {
                     const savings = template.calculateSavings(userData);
@@ -246,6 +314,7 @@ function generateInsights(userId) {
                             potentialSavings: Math.round(savings * 10) / 10,
                             priority: template.priority
                         });
+                        categoryInsightAdded = true;
                     }
                 }
             } catch (e) {
@@ -324,28 +393,49 @@ function generateAISummary(userId) {
     const userData = analyzeUserData(userId);
     const insights = generateInsights(userId);
 
-    // Find highest emission category
+    // Handle no data case
+    if (!userData.hasAnyData) {
+        return {
+            summary: "Welcome to CarbonWise! Start logging your daily activities to get personalized insights about your carbon footprint. We'll analyze your transport, energy, diet, and waste patterns to help you make eco-friendly choices.",
+            topCategory: null,
+            potentialSavings: '0',
+            insightCount: 0
+        };
+    }
+
+    // Find highest emission category (only from categories with data)
     const categories = [
-        { name: 'transport', emissions: userData.transportEmissions },
-        { name: 'electricity', emissions: userData.electricityEmissions },
-        { name: 'heating', emissions: userData.heatingEmissions },
-        { name: 'diet', emissions: userData.dietEmissions },
-        { name: 'waste', emissions: userData.wasteEmissions }
-    ];
+        { name: 'transport', emissions: userData.transportEmissions, hasData: userData.hasTransportData },
+        { name: 'electricity', emissions: userData.electricityEmissions, hasData: userData.hasElectricityData },
+        { name: 'heating', emissions: userData.heatingEmissions, hasData: userData.hasHeatingData },
+        { name: 'diet', emissions: userData.dietEmissions, hasData: userData.hasDietData },
+        { name: 'waste', emissions: userData.wasteEmissions, hasData: userData.hasWasteData }
+    ].filter(c => c.hasData);
+
+    if (categories.length === 0) {
+        return {
+            summary: "You've started tracking! Keep logging activities to build a complete picture of your carbon footprint.",
+            topCategory: null,
+            potentialSavings: '0',
+            insightCount: insights.length
+        };
+    }
 
     categories.sort((a, b) => b.emissions - a.emissions);
     const topCategory = categories[0];
-    const totalEmissions = categories.reduce((sum, c) => sum + c.emissions, 0) || 1;
-    const topPercentage = Math.round((topCategory.emissions / totalEmissions) * 100);
+    const totalEmissions = categories.reduce((sum, c) => sum + c.emissions, 0);
+    const topPercentage = totalEmissions > 0 ? Math.round((topCategory.emissions / totalEmissions) * 100) : 0;
 
     // Calculate total potential savings
     const totalPotentialSavings = insights.reduce((sum, i) => sum + i.potentialSavings, 0);
 
     // Generate personalized summary
-    let summary = `Based on your activity patterns, your highest emission source is **${topCategory.name}**, accounting for ${topPercentage}% of your footprint. `;
+    let summary = `Based on ${userData.activityCount} logged activities, your highest emission source is **${topCategory.name}** at ${topCategory.emissions.toFixed(1)} kg CO₂ (${topPercentage}% of tracked emissions). `;
 
-    if (insights.length > 0) {
-        summary += `By following our top recommendations, you could reduce emissions by up to ${totalPotentialSavings.toFixed(0)} kg CO₂ per month.`;
+    if (insights.length > 0 && totalPotentialSavings > 0) {
+        summary += `By following our recommendations, you could save up to ${totalPotentialSavings.toFixed(0)} kg CO₂ per month.`;
+    } else {
+        summary += `Keep tracking to unlock personalized reduction tips!`;
     }
 
     return {
@@ -360,10 +450,137 @@ function generateAISummary(userId) {
     };
 }
 
+// Get user's active goals for context
+function getUserGoals(userId) {
+    try {
+        return db.prepare(`
+            SELECT type, title, target_value, current_value, status
+            FROM goals WHERE user_id = ? AND status = 'active'
+        `).all(userId);
+    } catch (e) {
+        return [];
+    }
+}
+
+// Generate AI-powered insights using Ollama
+async function generateAIInsights(userId) {
+    // Check if Ollama is available
+    const ollamaAvailable = await ollama.isOllamaAvailable();
+    
+    if (!ollamaAvailable) {
+        console.log('Ollama not available, using rule-based insights');
+        return null;
+    }
+
+    // Gather user data
+    const userData = analyzeUserData(userId);
+    const trends = identifyTrends(userId);
+    const goals = getUserGoals(userId);
+
+    // Add trends and goals to userData for context
+    userData.trends = trends;
+    userData.goals = goals;
+
+    try {
+        const aiInsights = await ollama.generateCarbonInsights(userData);
+        return {
+            source: 'ai',
+            model: ollama.OLLAMA_MODEL,
+            generatedAt: new Date().toISOString(),
+            ...aiInsights
+        };
+    } catch (error) {
+        console.error('Failed to generate AI insights:', error);
+        return null;
+    }
+}
+
+// Get combined insights (AI + rule-based with caching)
+async function getInsights(userId, forceRefresh = false) {
+    // Check cache first (insights less than 6 hours old)
+    if (!forceRefresh) {
+        const cached = db.prepare(`
+            SELECT * FROM insights 
+            WHERE user_id = ? AND is_dismissed = 0 
+            AND datetime(created_at) > datetime('now', '-6 hours')
+            ORDER BY priority DESC
+            LIMIT 1
+        `).get(userId);
+
+        if (cached && cached.description) {
+            try {
+                const cachedData = JSON.parse(cached.description);
+                if (cachedData.source === 'ai') {
+                    return cachedData;
+                }
+            } catch (e) {
+                // Invalid cache, regenerate
+            }
+        }
+    }
+
+    // Try to generate AI insights
+    let aiInsights = await generateAIInsights(userId);
+
+    if (aiInsights) {
+        // Cache AI insights
+        try {
+            // Clear old AI insights
+            db.prepare(`
+                DELETE FROM insights 
+                WHERE user_id = ? AND insight_type = 'ai_generated'
+            `).run(userId);
+
+            // Store new AI insights
+            db.prepare(`
+                INSERT INTO insights (user_id, insight_type, category, title, description, priority, created_at)
+                VALUES (?, 'ai_generated', 'all', 'AI Insights', ?, 10, datetime('now'))
+            `).run(userId, JSON.stringify(aiInsights));
+        } catch (e) {
+            console.error('Failed to cache AI insights:', e);
+        }
+
+        return aiInsights;
+    }
+
+    // Fallback to rule-based insights
+    const ruleBasedInsights = generateInsights(userId);
+    const trends = identifyTrends(userId);
+    const summary = generateAISummary(userId);
+
+    return {
+        source: 'rules',
+        generatedAt: new Date().toISOString(),
+        summary: summary.summary,
+        topInsight: ruleBasedInsights[0]?.description || '',
+        insights: ruleBasedInsights.slice(0, 4),
+        trends: trends,
+        encouragement: getEncouragement(trends)
+    };
+}
+
+// Generate encouragement based on trends
+function getEncouragement(trends) {
+    const positiveTrends = trends.filter(t => t.trend === 'positive');
+    
+    if (positiveTrends.length >= 2) {
+        return "Amazing progress! You're making real changes across multiple categories. Keep up the fantastic work! 🌱";
+    } else if (positiveTrends.length === 1) {
+        return `Great job reducing your ${positiveTrends[0].category} emissions! Small steps lead to big changes. Keep it up! 💪`;
+    } else if (trends.some(t => t.trend === 'neutral')) {
+        return "You're maintaining steady habits. Ready to take the next step? Try one small change this week! 🌿";
+    } else {
+        return "Every journey starts somewhere. Pick one area to focus on this week, and you'll see progress! 🌍";
+    }
+}
+
 module.exports = {
     analyzeUserData,
     generateInsights,
     identifyTrends,
     generateAISummary,
+    generateAIInsights,
+    getInsights,
+    getUserGoals,
     INSIGHT_TEMPLATES
 };

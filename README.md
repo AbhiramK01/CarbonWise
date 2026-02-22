@@ -99,7 +99,8 @@ carbonwise/
 │   └── leaderboard.js # Leaderboard routes
 ├── utils/
 │   ├── gamification.js    # Gamification logic
-│   └── insights-engine.js # ML insights engine
+│   ├── insights-engine.js # ML insights engine
+│   └── ollama.js          # Ollama LLM integration
 └── public/
     ├── index.html     # Frontend HTML
     ├── app.js         # Frontend JavaScript
@@ -126,7 +127,118 @@ carbonwise/
 - **Backend**: Node.js, Express.js
 - **Database**: SQLite (sql.js - pure JavaScript, no native modules)
 - **Authentication**: JWT (jsonwebtoken), bcryptjs
-- **Frontend**: HTML, CSS, JavaScript
+- **Frontend**: HTML, CSS, JavaScript, Chart.js
+- **AI/ML**: Ollama (local LLM) for personalized insights
+
+## AI-Powered Insights with Ollama
+
+CarbonWise uses [Ollama](https://ollama.ai/) to generate personalized, AI-powered carbon footprint insights. Ollama runs locally on your machine, ensuring privacy and no API costs.
+
+### Installing Ollama on Windows
+
+#### Step 1: Download Ollama
+
+1. Visit [https://ollama.ai/download](https://ollama.ai/download)
+2. Click **"Download for Windows"**
+3. Run the installer (`OllamaSetup.exe`)
+4. Follow the installation wizard (keep default settings)
+
+#### Step 2: Verify Installation
+
+Open **Command Prompt** or **PowerShell** and run:
+
+```cmd
+ollama --version
+```
+
+You should see the version number (e.g., `ollama version 0.1.x`).
+
+#### Step 3: Pull the Required Model
+
+CarbonWise uses the `llama3.1:8b` model. Download it by running:
+
+```cmd
+ollama pull llama3.1:8b
+```
+
+> **Note**: This downloads ~4.7GB. Make sure you have sufficient disk space and a stable internet connection.
+
+#### Step 4: Start the Ollama Server
+
+Ollama runs as a background service on Windows. To ensure it's running:
+
+```cmd
+ollama serve
+```
+
+Or check if it's already running:
+
+```cmd
+curl http://localhost:11434/api/tags
+```
+
+If you see a JSON response with model information, Ollama is ready!
+
+#### Step 5: Configure CarbonWise (Optional)
+
+Add these to your `.env` file to customize Ollama settings:
+
+```env
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT=60000
+```
+
+### Installing Ollama on macOS
+
+```bash
+# Using Homebrew
+brew install ollama
+
+# Or download from https://ollama.ai/download
+
+# Pull the model
+ollama pull llama3.1:8b
+
+# Start the server
+ollama serve
+```
+
+### Installing Ollama on Linux
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull the model
+ollama pull llama3.1:8b
+
+# Start the server
+ollama serve
+```
+
+### Running Without Ollama
+
+CarbonWise works without Ollama! If Ollama isn't available, the app automatically falls back to rule-based insights. You'll still get personalized recommendations based on your activity data.
+
+### Troubleshooting Ollama
+
+**"Connection refused" error:**
+- Make sure Ollama is running: `ollama serve`
+- Check if port 11434 is available
+
+**Slow response times:**
+- First inference is slower (model loading)
+- Subsequent requests are faster
+- Consider using a smaller model: `ollama pull llama3.2:3b`
+
+**Out of memory:**
+- Close other applications
+- Try a smaller model: `ollama pull llama3.2:1b`
+
+**Windows Firewall blocking Ollama:**
+- Allow Ollama through Windows Firewall
+- Settings → Privacy & Security → Windows Security → Firewall → Allow an app
 
 ## Troubleshooting
 

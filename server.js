@@ -11,6 +11,13 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Disable caching for development
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Wait for database to initialize before setting up routes

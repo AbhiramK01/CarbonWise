@@ -91,56 +91,123 @@ async function generateCarbonInsights(userData) {
                     userData.electricityUsage > 0 ||
                     userData.activityCount > 0;
 
-    const systemPrompt = `You are a brutally honest carbon footprint coach. No corporate speak. No fluff. Just straight talk.
+    // Calculate comparison metrics
+    const globalAvgMonthly = 400; // kg CO2/month average person
+    const userVsAvg = userData.totalEmissions > 0 ? (userData.totalEmissions / globalAvgMonthly * 100).toFixed(0) : 0;
+    const isAboveAvg = userData.totalEmissions > globalAvgMonthly;
 
-YOUR STYLE:
-- Direct, punchy, conversational
-- Use "you" directly - like talking to a friend
-- Numbers and specifics only - no vague "could save" without data
-- One clear action per insight
-- Max 1-2 sentences per insight
+    // Cost estimates (rough averages)
+    const costPerKgCO2 = {
+        transport: 0.15, // $/kg (fuel cost)
+        electricity: 0.08, // $/kg 
+        diet: 0.10,
+        waste: 0.05
+    };
 
-STRICT RULES:
-1. ONE insight per category MAXIMUM - pick the highest impact action
-2. If no data for a category, skip it entirely
-3. Every insight must have a specific number attached
-4. No generic advice like "consider switching" - say exactly what to do
-5. Calculate savings from ACTUAL data provided
+    const systemPrompt = `You are a data-driven carbon analyst. Zero fluff. Math only.
 
-Format as JSON:
+OUTPUT RULES:
+1. Show exact math: "X trips × Y kg = Z total → cut A = save B kg"
+2. Compare to average: "You're at X%, average person is 400 kg/month"
+3. Include weekly challenge: one specific thing to try THIS WEEK
+4. Add cost savings: "Save X kg = save ~$Y/month"
+5. ONE insight per category - highest ROI action only
+6. Never invent data - use ONLY numbers provided below
+7. Never say "consider" or "you could" - give direct commands
+
+JSON FORMAT (strict):
 {
-    "summary": "One punchy sentence about their footprint status",
-    "topInsight": {"title": "The ONE thing to fix first", "description": "Direct instruction", "category": "category", "potentialSavings": realistic_number},
+    "summary": "[X kg this month] = [Y]% of average. [One sentence verdict]",
+    "topInsight": {
+        "title": "[VERB] [specific action]",
+        "description": "[Math breakdown] → [Exact savings in kg AND $]",
+        "category": "transport|electricity|diet|waste",
+        "potentialSavings": [number],
+        "weeklySavings": [number / 4]
+    },
     "insights": [
-        {"title": "Action verb + specific thing", "description": "Why + exact impact", "category": "transport|electricity|diet|waste", "potentialSavings": number}
+        {
+            "title": "[VERB] [specific action]",
+            "description": "[Current usage] × [factor] = [total] → [action] = [savings]",
+            "category": "transport|electricity|diet|waste",
+            "potentialSavings": [number],
+            "costSavings": [number in $]
+        }
     ],
-    "encouragement": "One motivating line - no cheese"
+    "weeklyChallenge": {
+        "title": "This week: [specific challenge]",
+        "description": "[Exactly what to do] - target: [measurable goal]",
+        "targetSavings": [number]
+    },
+    "encouragement": "[Fact-based motivator with number]"
 }`;
 
-    const noDataNote = !hasData ? '\n\nUSER HAS NO DATA. Just tell them to start logging - nothing else.' : '';
+    const noDataNote = !hasData ? '\n\nUSER HAS NO DATA. Response: Tell them to log 3 activities to get insights.' : '';
 
     const categoriesLogged = userData.categoriesWithData || [];
     
-    const prompt = `Analyze and give direct advice:${noDataNote}
+    // Build category breakdown with math
+    let categoryBreakdown = '';
+    if (userData.transportEmissions > 0) {
+        const carEmissionsPerTrip = userData.carTrips > 0 ? (userData.transportEmissions / userData.carTrips).toFixed(1) : 0;
+        const potentialCut = (userData.transportEmissions * 0.3).toFixed(1);
+        const costSave = (potentialCut * costPerKgCO2.transport).toFixed(0);
+        categoryBreakdown += `
+TRANSPORT: ${userData.transportEmissions.toFixed(1)} kg
+  - ${userData.carTrips || 0} car trips × ${carEmissionsPerTrip} kg/trip = ${userData.transportEmissions.toFixed(1)} kg
+  - ${userData.publicTransitTrips || 0} transit trips (low emission)
+  - MAX CUT: Replace 2 car trips with transit/bike → save ${potentialCut} kg (~$${costSave}/month)`;
+    }
+    
+    if (userData.electricityEmissions > 0) {
+        const kwhPerKg = userData.electricityUsage > 0 ? (userData.electricityUsage / userData.electricityEmissions).toFixed(1) : 2;
+        const potentialCut = (userData.electricityEmissions * 0.2).toFixed(1);
+        const costSave = (potentialCut * costPerKgCO2.electricity).toFixed(0);
+        categoryBreakdown += `
+ELECTRICITY: ${userData.electricityEmissions.toFixed(1)} kg
+  - ${userData.electricityUsage || 0} kWh × 0.5 kg/kWh = ${userData.electricityEmissions.toFixed(1)} kg
+  - MAX CUT: Reduce usage 20% → save ${potentialCut} kg (~$${costSave}/month)`;
+    }
+    
+    if (userData.dietEmissions > 0) {
+        const potentialCut = (userData.dietEmissions * 0.25).toFixed(1);
+        const costSave = (potentialCut * costPerKgCO2.diet).toFixed(0);
+        categoryBreakdown += `
+DIET: ${userData.dietEmissions.toFixed(1)} kg
+  - Diet type: ${userData.dietType || 'mixed'}
+  - MAX CUT: 2 meatless days/week → save ${potentialCut} kg (~$${costSave}/month)`;
+    }
+    
+    if (userData.wasteEmissions > 0) {
+        const potentialCut = (userData.wasteEmissions * 0.3).toFixed(1);
+        categoryBreakdown += `
+WASTE: ${userData.wasteEmissions.toFixed(1)} kg
+  - MAX CUT: Compost food scraps → save ${potentialCut} kg`;
+    }
 
-THEIR NUMBERS:
-- Total: ${userData.totalEmissions?.toFixed(1) || 0} kg CO₂ this month
-- Activities: ${userData.activityCount || 0}
-${userData.transportEmissions > 0 ? `- Transport: ${userData.transportEmissions?.toFixed(1)} kg (${userData.carTrips || 0} car trips, ${userData.publicTransitTrips || 0} transit)` : ''}
-${userData.electricityEmissions > 0 ? `- Electricity: ${userData.electricityEmissions?.toFixed(1)} kg (${userData.electricityUsage || 0} kWh)` : ''}
-${userData.heatingEmissions > 0 ? `- Heating: ${userData.heatingEmissions?.toFixed(1)} kg` : ''}
-${userData.dietEmissions > 0 ? `- Food: ${userData.dietEmissions?.toFixed(1)} kg (${userData.dietType || 'mixed'} diet)` : ''}
-${userData.wasteEmissions > 0 ? `- Waste: ${userData.wasteEmissions?.toFixed(1)} kg` : ''}
+    const prompt = `ANALYZE THIS USER'S CARBON DATA:${noDataNote}
 
-CATEGORIES WITH DATA: ${categoriesLogged.length > 0 ? categoriesLogged.join(', ') : 'NONE'}
+TOTALS:
+- Monthly emissions: ${userData.totalEmissions?.toFixed(1) || 0} kg CO₂
+- vs Global average: ${userVsAvg}% (average = 400 kg/month)
+- Status: ${isAboveAvg ? 'ABOVE average - needs reduction' : 'BELOW average - good, optimize further'}
+- Activities logged: ${userData.activityCount || 0}
+${categoryBreakdown}
 
-${hasData ? `Give exactly ${Math.min(categoriesLogged.length, 3)} insights - ONE per category with data. Highest impact actions only.` : 'No data yet - encourage logging.'}`;
+TASK:
+1. Summary with exact % comparison
+2. Top insight = highest kg category with exact math
+3. One insight per other category (if data exists)
+4. Weekly challenge = one specific thing to try this week
+5. Use ONLY the numbers above - do not invent
+
+Categories with data: ${categoriesLogged.length > 0 ? categoriesLogged.join(', ') : 'NONE'}`;
 
     try {
         const response = await generateCompletion(prompt, {
             systemPrompt,
-            temperature: 0.6,
-            maxTokens: 600
+            temperature: 0.4,
+            maxTokens: 800
         });
 
         // Parse JSON response

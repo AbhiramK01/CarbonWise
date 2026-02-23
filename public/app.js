@@ -337,6 +337,7 @@ let emissionsChart = null;
 let categoryChart = null;
 
 async function loadDashboard() {
+    console.log('loadDashboard called, isLoggedIn:', isLoggedIn());
     if (!isLoggedIn()) {
         showDemoData();
         return;
@@ -344,6 +345,7 @@ async function loadDashboard() {
     
     try {
         const stats = await apiRequest('/stats/dashboard');
+        console.log('Dashboard stats received:', stats);
         updateDashboardStats(stats);
         await loadChartData();
     } catch (error) {
@@ -383,15 +385,27 @@ function updateTrendIndicator(elementId, change, trend, label) {
 }
 
 function updateDashboardStats(stats) {
+    console.log('updateDashboardStats called with:', stats);
     const todayEl = document.getElementById('today-emissions');
     const weekEl = document.getElementById('week-emissions');
     const monthEl = document.getElementById('month-emissions');
     const globalEl = document.getElementById('global-comparison');
     
+    console.log('Elements found:', { todayEl: !!todayEl, weekEl: !!weekEl, monthEl: !!monthEl, globalEl: !!globalEl });
+    
     // Update values with unit conversion
-    if (todayEl) todayEl.textContent = convertEmissions(stats.today?.emissions || 0);
-    if (weekEl) weekEl.textContent = convertEmissions(stats.week?.emissions || 0);
-    if (monthEl) monthEl.textContent = convertEmissions(stats.month?.emissions || 0);
+    if (todayEl) {
+        todayEl.textContent = convertEmissions(stats.today?.emissions || 0);
+        console.log('Set today-emissions to:', todayEl.textContent);
+    }
+    if (weekEl) {
+        weekEl.textContent = convertEmissions(stats.week?.emissions || 0);
+        console.log('Set week-emissions to:', weekEl.textContent);
+    }
+    if (monthEl) {
+        monthEl.textContent = convertEmissions(stats.month?.emissions || 0);
+        console.log('Set month-emissions to:', monthEl.textContent);
+    }
     if (globalEl) {
         const comparison = stats.comparison?.global || 0;
         globalEl.textContent = `${comparison > 0 ? '+' : ''}${comparison}%`;
@@ -1173,6 +1187,7 @@ async function saveActivity() {
         
         closeAddActivityModal();
         loadActivityLog();
+        loadDashboard(); // Refresh dashboard stats
         showToast(isEditing ? 'Activity updated!' : 'Activity logged successfully!', 'success');
         editingActivityId = null;
     } catch (error) {
@@ -1186,6 +1201,7 @@ async function deleteActivity(id) {
     try {
         await apiRequest(`/activities/${id}`, { method: 'DELETE' });
         loadActivityLog();
+        loadDashboard(); // Refresh dashboard stats
         showToast('Activity deleted', 'success');
     } catch (error) {
         showToast(error.message, 'error');
@@ -1322,31 +1338,51 @@ function renderInsights(data) {
     
     // Update insights grid with enhanced cards
     const container = document.querySelector('#insights .insights-grid');
-    if (!container || !data.insights) return;
+    if (!container) return;
     
-    if (data.insights.length === 0) {
+    // Combine topInsight with insights array to show all recommendations
+    let allInsights = [...(data.insights || [])];
+    
+    // Add topInsight as first card if it exists and has category
+    if (data.topInsight && typeof data.topInsight === 'object' && data.topInsight.category) {
+        // Check if topInsight category is already in insights
+        const topCategory = data.topInsight.category.toLowerCase();
+        const alreadyHasCategory = allInsights.some(i => i.category?.toLowerCase() === topCategory);
+        
+        if (!alreadyHasCategory) {
+            allInsights.unshift({
+                ...data.topInsight,
+                isTop: true
+            });
+        }
+    }
+    
+    if (allInsights.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>Log more activities to get personalized insights!</p></div>';
         return;
     }
 
     // Calculate max savings for visual scaling
-    const maxSavings = Math.max(...data.insights.map(i => i.potentialSavings || 0), 50);
+    const maxSavings = Math.max(...allInsights.map(i => i.potentialSavings || 0), 50);
     
-    container.innerHTML = data.insights.map((insight, index) => {
+    container.innerHTML = allInsights.map((insight, index) => {
         const savingsPercent = insight.potentialSavings ? Math.min((insight.potentialSavings / maxSavings) * 100, 100) : 0;
         const categoryData = data.stats?.breakdown?.find(b => b.category === insight.category);
+        const costSavings = insight.costSavings || (insight.potentialSavings ? Math.round(insight.potentialSavings * 0.1) : 0);
+        const isTopPriority = insight.isTop || index === 0;
         
         return `
-        <div class="insight-card ${insight.category}" data-insight-id="${insight.id || index}">
+        <div class="insight-card ${insight.category} ${isTopPriority ? 'top-priority' : ''}" data-insight-id="${insight.id || index}">
             <div class="insight-header">
                 <div class="insight-icon">
                     <i class="fas ${getInsightIcon(insight.category)}"></i>
                 </div>
                 <span class="insight-category">${capitalizeFirst(insight.category)}</span>
-                ${insight.potentialSavings >= 20 ? '<span class="high-impact-badge"><i class="fas fa-bolt"></i> High Impact</span>' : ''}
+                ${isTopPriority ? '<span class="priority-badge"><i class="fas fa-star"></i> #1 Priority</span>' : ''}
+                ${!isTopPriority && insight.potentialSavings >= 20 ? '<span class="high-impact-badge"><i class="fas fa-bolt"></i> High Impact</span>' : ''}
             </div>
             <h4>${insight.title}</h4>
-            <p>${insight.description}</p>
+            <p class="insight-description">${insight.description}</p>
             
             ${categoryData ? `
             <div class="insight-stats">
@@ -1362,9 +1398,15 @@ function renderInsights(data) {
             ` : ''}
             
             ${insight.potentialSavings ? `
-                <div class="insight-savings">
-                    <i class="fas fa-leaf"></i>
-                    <span>Save up to <strong>${insight.potentialSavings} kg</strong> CO₂/month</span>
+                <div class="insight-savings-row">
+                    <div class="insight-savings">
+                        <i class="fas fa-leaf"></i>
+                        <span>Save <strong>${insight.potentialSavings} kg</strong> CO₂</span>
+                    </div>
+                    <div class="insight-cost-savings">
+                        <i class="fas fa-dollar-sign"></i>
+                        <span>~$${costSavings}/month</span>
+                    </div>
                 </div>
                 <div class="savings-bar">
                     <div class="savings-bar-fill" style="width: ${savingsPercent}%"></div>

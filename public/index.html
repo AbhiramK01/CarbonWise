@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarbonWise - Track Your Carbon Footprint</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=6">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -189,6 +189,11 @@
                             <button class="chart-btn" data-range="month">Month</button>
                             <button class="chart-btn" data-range="year">Year</button>
                         </div>
+                    </div>
+                    <div class="chart-nav">
+                        <button class="chart-nav-btn" id="chart-prev" title="Previous"><i class="fas fa-chevron-left"></i></button>
+                        <span class="chart-period-label" id="chart-period-label">This Week</span>
+                        <button class="chart-nav-btn" id="chart-next" title="Next"><i class="fas fa-chevron-right"></i></button>
                     </div>
                     <canvas id="emissions-chart"></canvas>
                 </div>
@@ -962,6 +967,6 @@
         <span id="toast-message">Success!</span>
     </div>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>

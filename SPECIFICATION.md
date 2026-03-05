@@ -191,8 +191,8 @@ Interactive calculator with 5 tabs:
 | Widget | Data Displayed |
 |--------|----------------|
 | **Today's Emissions** | Sum of today's logged emissions |
-| **This Week** | Last 7 days emissions |
-| **This Month** | Last 30 days emissions |
+| **This Week** | Current calendar week emissions (Mon-Sun) |
+| **This Month** | Current calendar month emissions |
 | **vs Global Average** | Comparison to 4.8 tons/year global avg |
 | **Emissions Chart** | Line chart (Week/Month/Year views) |
 | **Category Chart** | Doughnut chart by category |

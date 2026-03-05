@@ -40,10 +40,27 @@ router.get('/', authenticateToken, async (req, res) => {
 // Get enhanced statistics for insights
 function getEnhancedStats(userId) {
     const today = new Date();
-    const monthAgo = new Date();
-    monthAgo.setDate(monthAgo.getDate() - 30);
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    // Use calendar month boundaries instead of rolling 30 days
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+    
+    // Use calendar week boundaries (Monday-Sunday)
+    const dayOfWeek = today.getDay();
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(today.getDate() - daysFromMonday);
+    thisWeekStart.setHours(0, 0, 0, 0);
+    const thisWeekStartStr = thisWeekStart.toISOString().split('T')[0];
+    
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+    const lastWeekStartStr = lastWeekStart.toISOString().split('T')[0];
+    
+    const lastWeekEnd = new Date(thisWeekStart);
+    lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+    const lastWeekEndStr = lastWeekEnd.toISOString().split('T')[0];
 
     // Normalize category names
     const normalizeCategory = (cat) => {
@@ -53,7 +70,7 @@ function getEnhancedStats(userId) {
         return lower;
     };
 
-    // Category breakdown (raw from DB)
+    // Category breakdown (raw from DB) - using calendar month
     const rawBreakdown = db.prepare(`
         SELECT category, 
                COUNT(*) as count,
@@ -63,7 +80,7 @@ function getEnhancedStats(userId) {
         WHERE user_id = ? AND date >= ?
         GROUP BY category
         ORDER BY total_emissions DESC
-    `).all(userId, monthAgo.toISOString().split('T')[0]);
+    `).all(userId, thisMonthStartStr);
 
     // Merge categories (energy → electricity, food → diet)
     const mergedMap = new Map();
@@ -96,31 +113,29 @@ function getEnhancedStats(userId) {
         percentage: totalEmissions > 0 ? Math.round((c.total_emissions / totalEmissions) * 100) : 0
     }));
 
-    // Weekly comparison
+    // Weekly comparison (calendar week boundaries)
     const thisWeekEmissions = db.prepare(`
         SELECT COALESCE(SUM(emissions), 0) as total FROM activities 
         WHERE user_id = ? AND date >= ?
-    `).get(userId, weekAgo.toISOString().split('T')[0]).total;
+    `).get(userId, thisWeekStartStr).total;
 
-    const twoWeeksAgo = new Date();
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
     const lastWeekEmissions = db.prepare(`
         SELECT COALESCE(SUM(emissions), 0) as total FROM activities 
-        WHERE user_id = ? AND date >= ? AND date < ?
-    `).get(userId, twoWeeksAgo.toISOString().split('T')[0], weekAgo.toISOString().split('T')[0]).total;
+        WHERE user_id = ? AND date >= ? AND date <= ?
+    `).get(userId, lastWeekStartStr, lastWeekEndStr).total;
 
     const weeklyChange = lastWeekEmissions > 0 
         ? Math.round(((thisWeekEmissions - lastWeekEmissions) / lastWeekEmissions) * 100) 
         : 0;
 
-    // Activity patterns
+    // Activity patterns (calendar month)
     const activityCount = db.prepare(`
         SELECT COUNT(*) as count FROM activities WHERE user_id = ? AND date >= ?
-    `).get(userId, monthAgo.toISOString().split('T')[0]).count;
+    `).get(userId, thisMonthStartStr).count;
 
     const daysActive = db.prepare(`
         SELECT COUNT(DISTINCT date) as days FROM activities WHERE user_id = ? AND date >= ?
-    `).get(userId, monthAgo.toISOString().split('T')[0]).days;
+    `).get(userId, thisMonthStartStr).days;
 
     // Best performing category (lowest per-activity emissions)
     const bestCategory = breakdown.length > 0 

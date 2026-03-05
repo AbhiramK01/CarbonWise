@@ -480,14 +480,87 @@ function updateUserComparison(stats) {
     }
 }
 
-async function loadChartData() {
+// Chart navigation state
+let currentChartRange = 'week';
+let currentChartOffset = 0; // 0 = current period, 1 = previous period, etc.
+
+async function loadChartData(range = currentChartRange, offset = currentChartOffset) {
+    currentChartRange = range;
+    currentChartOffset = offset;
+    
     try {
-        const chartData = await apiRequest('/stats/charts?range=week');
+        const chartData = await apiRequest(`/stats/charts?range=${range}&offset=${offset}`);
         updateEmissionsChart(chartData.timeline || chartData);
         updateCategoryChart(chartData.categories || []);
+        updateChartPeriodLabel(range, offset, chartData.periodLabel);
+        updateChartNavButtons();
     } catch (error) {
         console.error('Failed to load chart data:', error);
     }
+}
+
+function updateChartPeriodLabel(range, offset, serverLabel) {
+    const labelEl = document.getElementById('chart-period-label');
+    if (!labelEl) return;
+    
+    if (serverLabel) {
+        labelEl.textContent = serverLabel;
+        return;
+    }
+    
+    const now = new Date();
+    let label = '';
+    
+    if (range === 'week') {
+        if (offset === 0) {
+            label = 'This Week';
+        } else if (offset === 1) {
+            label = 'Last Week';
+        } else {
+            label = `${offset} Weeks Ago`;
+        }
+    } else if (range === 'month') {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+        if (offset === 0) {
+            label = 'This Month';
+        } else {
+            label = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        }
+    } else if (range === 'year') {
+        const targetYear = now.getFullYear() - offset;
+        if (offset === 0) {
+            label = 'This Year';
+        } else {
+            label = `${targetYear}`;
+        }
+    }
+    
+    labelEl.textContent = label;
+}
+
+function updateChartNavButtons() {
+    const prevBtn = document.getElementById('chart-prev');
+    const nextBtn = document.getElementById('chart-next');
+    
+    // Disable next if we're at current period
+    if (nextBtn) {
+        nextBtn.disabled = currentChartOffset === 0;
+    }
+    
+    // Could add a max offset limit (e.g., don't go back more than 5 years)
+    if (prevBtn) {
+        const maxOffset = currentChartRange === 'year' ? 5 : (currentChartRange === 'month' ? 24 : 52);
+        prevBtn.disabled = currentChartOffset >= maxOffset;
+    }
+}
+
+function navigateChart(direction) {
+    if (direction === 'prev') {
+        currentChartOffset++;
+    } else if (direction === 'next' && currentChartOffset > 0) {
+        currentChartOffset--;
+    }
+    loadChartData(currentChartRange, currentChartOffset);
 }
 
 function updateEmissionsChart(chartData) {
@@ -1028,10 +1101,13 @@ async function loadActivityLog() {
             const dateStr = currentLogDate.toISOString().split('T')[0];
             url = `/activities?date=${dateStr}`;
         } else if (currentPeriod === 'weekly') {
+            // Use Monday-Sunday calendar week
             const startDate = new Date(currentLogDate);
-            startDate.setDate(startDate.getDate() - startDate.getDay()); // Start of week (Sunday)
+            const dayOfWeek = startDate.getDay();
+            const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
+            startDate.setDate(startDate.getDate() - daysFromMonday); // Set to Monday
             const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + 6); // End of week (Saturday)
+            endDate.setDate(endDate.getDate() + 6); // End of week (Sunday)
             url = `/activities?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`;
         } else if (currentPeriod === 'monthly') {
             const startDate = new Date(currentLogDate.getFullYear(), currentLogDate.getMonth(), 1);
@@ -1058,10 +1134,13 @@ function updateCurrentDateDisplay() {
             day: 'numeric'
         });
     } else if (currentPeriod === 'weekly') {
+        // Use Monday-Sunday calendar week
         const startDate = new Date(currentLogDate);
-        startDate.setDate(startDate.getDate() - startDate.getDay());
+        const dayOfWeek = startDate.getDay();
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        startDate.setDate(startDate.getDate() - daysFromMonday); // Monday
         const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 6);
+        endDate.setDate(endDate.getDate() + 6); // Sunday
         dateEl.textContent = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     } else if (currentPeriod === 'monthly') {
         dateEl.textContent = currentLogDate.toLocaleDateString('en-US', {
@@ -1415,6 +1494,9 @@ function renderInsights(data) {
             
             <div class="insight-actions">
                 ${getActionChips(insight.category)}
+                <button class="action-chip goal-chip" onclick='addInsightAsGoal(${JSON.stringify({category: insight.category, title: insight.title, potentialSavings: insight.potentialSavings || 0}).replace(/'/g, "&#39;")})'>
+                    <i class="fas fa-bullseye"></i> Set as Goal
+                </button>
             </div>
         </div>
     `}).join('');
@@ -1609,6 +1691,92 @@ function getActionChips(category) {
 
 function showActionTip(action) {
     showToast(`💡 Tip: ${action} can help reduce your carbon footprint!`, 'info');
+}
+
+// Track in-progress goal creation to prevent duplicates
+let isCreatingGoal = false;
+
+// Add insight recommendation as a goal
+async function addInsightAsGoal(insight) {
+    if (!isLoggedIn()) {
+        openAuthModal('login');
+        return;
+    }
+    
+    // Prevent multiple clicks
+    if (isCreatingGoal) {
+        showToast('Please wait, creating goal...', 'info');
+        return;
+    }
+    
+    // Map insight categories to goal types
+    const categoryToGoalType = {
+        'transport': 'reduce-transport',
+        'energy': 'reduce-energy',
+        'electricity': 'reduce-energy',
+        'diet': 'diet-change',
+        'food': 'diet-change',
+        'waste': 'zero-waste'
+    };
+    
+    const goalType = categoryToGoalType[insight.category] || 'reduce-transport';
+    const targetValue = insight.potentialSavings || 10; // Default to 10 if no savings specified
+    
+    const goalTitles = {
+        'reduce-transport': 'Green Transport Challenge',
+        'reduce-energy': 'Clean Energy Challenge',
+        'diet-change': 'Plant-Based Diet Challenge',
+        'zero-waste': 'Zero Waste Challenge'
+    };
+    
+    const goalTitle = insight.title || goalTitles[goalType];
+    const durationDays = 30; // Default to 1 month
+    
+    // Check for existing active goal with same type
+    try {
+        const existingGoals = await apiRequest('/goals');
+        const duplicateGoal = (existingGoals.goals || []).find(
+            g => g.type === goalType && g.status === 'active'
+        );
+        
+        if (duplicateGoal) {
+            showToast(`You already have an active "${goalTitles[goalType] || goalType}" goal!`, 'warning');
+            showSection('goals');
+            return;
+        }
+    } catch (error) {
+        console.error('Failed to check existing goals:', error);
+    }
+    
+    // Calculate XP reward
+    const baseXP = 50;
+    const difficultyMultiplier = Math.min(3, 1 + (targetValue / 20));
+    const xpReward = Math.round(baseXP * difficultyMultiplier);
+    
+    isCreatingGoal = true;
+    
+    try {
+        await apiRequest('/goals', {
+            method: 'POST',
+            body: JSON.stringify({
+                title: goalTitle,
+                target_value: targetValue,
+                duration_days: durationDays,
+                type: goalType,
+                xp_reward: xpReward
+            })
+        });
+        
+        showToast(`Goal "${goalTitle}" created! Target: ${targetValue} kg CO₂`, 'success');
+        
+        // Switch to goals section
+        showSection('goals');
+        loadGoals();
+    } catch (error) {
+        showToast(error.message || 'Failed to create goal', 'error');
+    } finally {
+        isCreatingGoal = false;
+    }
 }
 
 function renderTrends(trends) {
@@ -1812,16 +1980,21 @@ async function editGoal(id) {
 
 // ==================== GAMIFICATION ====================
 const LEVEL_TITLES = {
-    1: 'Eco Beginner',
-    2: 'Green Starter',
-    3: 'Carbon Cutter',
+    1: 'Seedling',
+    2: 'Sprout',
+    3: 'Green Thumb',
     4: 'Eco Enthusiast',
     5: 'Eco Warrior',
-    6: 'Climate Champion',
-    7: 'Sustainability Star',
-    8: 'Planet Protector',
-    9: 'Eco Master',
-    10: 'Climate Hero'
+    6: 'Carbon Cutter',
+    7: 'Earth Defender',
+    8: 'Climate Champion',
+    9: 'Sustainability Star',
+    10: 'Eco Legend',
+    11: 'Planet Protector',
+    12: 'Green Guardian',
+    13: 'Earth Ambassador',
+    14: 'Climate Hero',
+    15: 'Eco Master'
 };
 
 const LEVEL_ICONS = {
@@ -1834,11 +2007,32 @@ const LEVEL_ICONS = {
     7: 'fa-star',
     8: 'fa-crown',
     9: 'fa-gem',
-    10: 'fa-trophy'
+    10: 'fa-trophy',
+    11: 'fa-shield-alt',
+    12: 'fa-medal',
+    13: 'fa-certificate',
+    14: 'fa-award',
+    15: 'fa-dragon'
 };
 
-// XP thresholds for each level (cumulative)
-const XP_THRESHOLDS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000];
+// XP thresholds for each level (must match backend!)
+const XP_THRESHOLDS = [
+    0,      // Level 1
+    200,    // Level 2
+    500,    // Level 3
+    1000,   // Level 4
+    1800,   // Level 5
+    2800,   // Level 6
+    4000,   // Level 7
+    5500,   // Level 8
+    7500,   // Level 9
+    10000,  // Level 10
+    13000,  // Level 11
+    16500,  // Level 12
+    20500,  // Level 13
+    25000,  // Level 14
+    30000   // Level 15
+];
 
 function getXPForLevel(level) {
     // XP required to reach a specific level
@@ -1884,8 +2078,9 @@ async function loadUserProfile() {
 }
 
 function updateLevelDisplay(user, badges) {
-    const level = user.level || 1;
     const xp = user.xp || 0;
+    // Always recalculate level from XP to ensure accuracy
+    const level = getLevelFromXP(xp);
     
     // Update level number and title
     const levelNumber = document.getElementById('level-number');
@@ -1893,9 +2088,9 @@ function updateLevelDisplay(user, badges) {
     const levelIcon = document.getElementById('level-icon');
     
     if (levelNumber) levelNumber.textContent = `Level ${level}`;
-    if (levelTitle) levelTitle.textContent = LEVEL_TITLES[level] || LEVEL_TITLES[10];
+    if (levelTitle) levelTitle.textContent = LEVEL_TITLES[level] || LEVEL_TITLES[15];
     if (levelIcon) {
-        levelIcon.className = `fas ${LEVEL_ICONS[level] || LEVEL_ICONS[10]}`;
+        levelIcon.className = `fas ${LEVEL_ICONS[level] || LEVEL_ICONS[15]}`;
     }
     
     // Update progress bar using proper XP thresholds
@@ -1913,6 +2108,10 @@ function updateLevelDisplay(user, badges) {
     
     if (totalXPEl) totalXPEl.textContent = xp.toLocaleString();
     if (badgeCount) badgeCount.textContent = badges.length;
+    
+    // Also update dropdown XP
+    const dropdownXP = document.getElementById('dropdown-xp');
+    if (dropdownXP) dropdownXP.textContent = xp.toLocaleString();
 }
 
 async function loadAllBadges() {
@@ -2019,6 +2218,9 @@ function renderLeaderboard(leaderboard, userRank, type = 'global') {
     };
     
     container.innerHTML = leaderboard.map(user => {
+        // Recalculate level from XP for accuracy
+        const userLevel = getLevelFromXP(user.xp || 0);
+        
         // Different display for streak leaderboard
         const scoreDisplay = type === 'streak' 
             ? `<span class="lb-score"><i class="fas fa-fire" style="color: #e67e22;"></i> ${user.streak} days</span>`
@@ -2026,7 +2228,7 @@ function renderLeaderboard(leaderboard, userRank, type = 'global') {
             
         const reductionDisplay = type === 'streak'
             ? `<span class="lb-reduction">${user.xp.toLocaleString()} XP</span>`
-            : `<span class="lb-reduction">${user.reductionPercent > 0 ? '-' : '+'}${Math.abs(user.reductionPercent || 0)}%</span>`;
+            : `<span class="lb-reduction">Lvl ${userLevel}</span>`;
         
         return `
             <div class="leaderboard-item ${getRankClass(user.rank)} ${user.isCurrentUser ? 'you' : ''}">
@@ -2041,13 +2243,14 @@ function renderLeaderboard(leaderboard, userRank, type = 'global') {
     
     // Add current user if not in top list
     if (userRank && !leaderboard.some(u => u.isCurrentUser)) {
+        const userLevel = getLevelFromXP(userRank.xp || 0);
         container.innerHTML += `
             <div class="leaderboard-item you" style="margin-top: 1rem; border-top: 2px solid var(--border-color); padding-top: 1rem;">
                 <span class="lb-rank">${userRank.rank}</span>
                 <div class="lb-avatar"><i class="fas fa-user-circle"></i></div>
                 <span class="lb-name">You</span>
                 <span class="lb-score">${userRank.xp.toLocaleString()} XP</span>
-                <span class="lb-reduction">${userRank.reductionPercent > 0 ? '-' : '+'}${Math.abs(userRank.reductionPercent || 0)}%</span>
+                <span class="lb-reduction">Lvl ${userLevel}</span>
             </div>
         `;
     }
@@ -2418,21 +2621,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Chart range buttons
     document.querySelectorAll('.chart-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', () => {
             document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             
             if (isLoggedIn()) {
-                try {
-                    const chartData = await apiRequest(`/stats/charts?range=${btn.dataset.range}`);
-                    updateEmissionsChart(chartData.timeline || chartData);
-                    updateCategoryChart(chartData.categories || []);
-                } catch (error) {
-                    console.error('Failed to load chart data:', error);
-                }
+                // Reset offset when changing range
+                currentChartOffset = 0;
+                loadChartData(btn.dataset.range, 0);
             }
         });
     });
+    
+    // Chart navigation buttons
+    document.getElementById('chart-prev')?.addEventListener('click', () => navigateChart('prev'));
+    document.getElementById('chart-next')?.addEventListener('click', () => navigateChart('next'));
     
     // Initialize calculator
     initCalculator();

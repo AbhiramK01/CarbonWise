@@ -156,15 +156,15 @@ const INSIGHT_TEMPLATES = {
 function analyzeUserData(userId) {
     const data = {};
 
-    // Get user's activities from last 30 days
-    const monthAgo = new Date();
-    monthAgo.setDate(monthAgo.getDate() - 30);
-    const monthAgoStr = monthAgo.toISOString().split('T')[0];
+    // Get user's activities from current calendar month
+    const today = new Date();
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
 
     const activities = db.prepare(`
         SELECT * FROM activities 
         WHERE user_id = ? AND date >= ?
-    `).all(userId, monthAgoStr);
+    `).all(userId, thisMonthStartStr);
 
     // Normalize category names (merge similar categories)
     const normalizeCategory = (cat) => {
@@ -336,11 +336,23 @@ function generateInsights(userId) {
 function identifyTrends(userId) {
     const trends = [];
 
-    // Get emissions by category for last two weeks
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const twoWeeksAgo = new Date();
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    // Get emissions by category - using calendar week boundaries (Monday-Sunday)
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(today.getDate() - daysFromMonday);
+    thisWeekStart.setHours(0, 0, 0, 0);
+    const thisWeekStartStr = thisWeekStart.toISOString().split('T')[0];
+    
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+    const lastWeekStartStr = lastWeekStart.toISOString().split('T')[0];
+    
+    const lastWeekEnd = new Date(thisWeekStart);
+    lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+    const lastWeekEndStr = lastWeekEnd.toISOString().split('T')[0];
 
     const categories = ['transport', 'electricity', 'heating', 'diet', 'waste'];
 
@@ -349,13 +361,13 @@ function identifyTrends(userId) {
             SELECT COALESCE(SUM(emissions), 0) as total
             FROM activities
             WHERE user_id = ? AND category = ? AND date >= ?
-        `).get(userId, category, weekAgo.toISOString().split('T')[0]);
+        `).get(userId, category, thisWeekStartStr);
 
         const lastWeek = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
             FROM activities
-            WHERE user_id = ? AND category = ? AND date >= ? AND date < ?
-        `).get(userId, category, twoWeeksAgo.toISOString().split('T')[0], weekAgo.toISOString().split('T')[0]);
+            WHERE user_id = ? AND category = ? AND date >= ? AND date <= ?
+        `).get(userId, category, lastWeekStartStr, lastWeekEndStr);
 
         if (lastWeek.total > 0) {
             const changePercent = Math.round(((thisWeek.total - lastWeek.total) / lastWeek.total) * 100);

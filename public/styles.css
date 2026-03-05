@@ -323,6 +323,54 @@ input, select {
     color: white;
 }
 
+/* Chart navigation */
+.chart-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.chart-nav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--light);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.chart-nav-btn:hover {
+    background: var(--primary-green);
+    color: white;
+    border-color: var(--primary-green);
+}
+
+.chart-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.chart-nav-btn:disabled:hover {
+    background: var(--light);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.chart-period-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 150px;
+    text-align: center;
+}
+
 .category-legend {
     display: flex;
     flex-wrap: wrap;
@@ -591,9 +639,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .transport-card.selected,
-.diet-card.selected {
+.transport-card.active,
+.diet-card.selected,
+.diet-card.active {
     border-color: var(--primary-green);
-    background: rgba(46, 204, 113, 0.1);
+    background: rgba(46, 204, 113, 0.15);
+    box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.2);
 }
 
 .transport-card i,
@@ -901,37 +952,50 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .activity-icon.electricity { background: var(--gradient-blue); }
+.activity-icon.energy { background: linear-gradient(135deg, #f1c40f, #f39c12); }
 .activity-icon.transport { background: var(--gradient-green); }
 .activity-icon.heating { background: var(--gradient-orange); }
 .activity-icon.diet { background: var(--gradient-purple); }
+.activity-icon.food { background: var(--gradient-orange); }
+.activity-icon.shopping { background: var(--gradient-purple); }
 .activity-icon.waste { background: linear-gradient(135deg, #95a5a6, #7f8c8d); }
 
-.activity-info {
+.activity-info,
+.activity-details {
     flex: 1;
 }
 
-.activity-info h4 {
+.activity-info h4,
+.activity-details h4 {
     font-size: 0.95rem;
     color: var(--text-primary);
     margin-bottom: 0.2rem;
+    font-weight: 600;
 }
 
-.activity-info span {
+.activity-info span,
+.activity-info p,
+.activity-details span,
+.activity-details p {
     font-size: 0.85rem;
     color: var(--text-secondary);
+    margin: 0;
 }
 
 .activity-emissions {
     text-align: right;
 }
 
-.activity-emissions .value {
+.activity-emissions .value,
+.activity-emissions .emissions-value {
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
+    display: block;
 }
 
-.activity-emissions .unit {
+.activity-emissions .unit,
+.activity-emissions .emissions-unit {
     font-size: 0.8rem;
     color: var(--text-secondary);
 }
@@ -1541,6 +1605,28 @@ input[type="range"]::-webkit-slider-thumb {
 .action-chip:hover {
     background: var(--primary-green);
     color: white;
+}
+
+/* Special styling for "Set as Goal" button */
+.action-chip.goal-chip {
+    background: #e74c3c;
+    color: #ffffff !important;
+    font-weight: 700;
+    border: 2px solid #c0392b;
+    box-shadow: 0 2px 6px rgba(231, 76, 60, 0.4);
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+}
+
+.action-chip.goal-chip:hover {
+    background: #c0392b;
+    color: #ffffff !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(231, 76, 60, 0.5);
+}
+
+.action-chip.goal-chip i {
+    color: #ffffff !important;
 }
 
 .insight-description {

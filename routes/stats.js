@@ -26,21 +26,33 @@ router.get('/dashboard', authenticateToken, (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         
         // Calculate date ranges
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+        // Use calendar week boundaries (Monday-Sunday)
+        const now = new Date();
+        const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Days since Monday
         
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        const monthAgoStr = monthAgo.toISOString().split('T')[0];
-
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-        const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
-
-        const twoMonthsAgo = new Date();
-        twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
-        const twoMonthsAgoStr = twoMonthsAgo.toISOString().split('T')[0];
+        const thisWeekStart = new Date(now);
+        thisWeekStart.setDate(now.getDate() - daysFromMonday);
+        thisWeekStart.setHours(0, 0, 0, 0);
+        const thisWeekStartStr = thisWeekStart.toISOString().split('T')[0];
+        
+        const lastWeekStart = new Date(thisWeekStart);
+        lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+        const lastWeekStartStr = lastWeekStart.toISOString().split('T')[0];
+        
+        const lastWeekEnd = new Date(thisWeekStart);
+        lastWeekEnd.setDate(thisWeekStart.getDate() - 1); // Sunday of last week
+        const lastWeekEndStr = lastWeekEnd.toISOString().split('T')[0];
+        
+        // Use calendar month boundaries instead of rolling 30 days
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+        
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthStartStr = lastMonthStart.toISOString().split('T')[0];
+        
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
+        const lastMonthEndStr = lastMonthEnd.toISOString().split('T')[0];
 
         // Today's emissions
         const todayStats = db.prepare(`
@@ -57,29 +69,29 @@ router.get('/dashboard', authenticateToken, (req, res) => {
             FROM activities WHERE user_id = ? AND date = ?
         `).get(userId, yesterdayStr);
 
-        // This week's emissions
+        // This week's emissions (calendar week, Monday-Sunday)
         const weekStats = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
             FROM activities WHERE user_id = ? AND date >= ?
-        `).get(userId, weekAgoStr);
+        `).get(userId, thisWeekStartStr);
 
-        // Last week's emissions
+        // Last week's emissions (previous calendar week)
         const lastWeekStats = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
-            FROM activities WHERE user_id = ? AND date >= ? AND date < ?
-        `).get(userId, twoWeeksAgoStr, weekAgoStr);
+            FROM activities WHERE user_id = ? AND date >= ? AND date <= ?
+        `).get(userId, lastWeekStartStr, lastWeekEndStr);
 
-        // This month's emissions
+        // This month's emissions (calendar month)
         const monthStats = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
             FROM activities WHERE user_id = ? AND date >= ?
-        `).get(userId, monthAgoStr);
+        `).get(userId, thisMonthStartStr);
 
-        // Last month's emissions
+        // Last month's emissions (previous calendar month)
         const lastMonthStats = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
-            FROM activities WHERE user_id = ? AND date >= ? AND date < ?
-        `).get(userId, twoMonthsAgoStr, monthAgoStr);
+            FROM activities WHERE user_id = ? AND date >= ? AND date <= ?
+        `).get(userId, lastMonthStartStr, lastMonthEndStr);
 
         // Calculate annual projection
         const daysTracked = db.prepare(`
@@ -152,33 +164,105 @@ router.get('/dashboard', authenticateToken, (req, res) => {
 router.get('/charts', authenticateToken, (req, res) => {
     try {
         const userId = req.user.id;
-        const { range = 'week' } = req.query;
+        const { range = 'week', offset = '0' } = req.query;
+        const periodOffset = parseInt(offset) || 0;
 
-        let days, groupBy, dateFormat;
-        const endDate = new Date();
-        let startDate = new Date();
+        let groupBy, periodLabel;
+        const now = new Date();
+        let startDate, endDate;
 
         switch (range) {
             case 'week':
-                days = 7;
-                startDate.setDate(startDate.getDate() - 6);
+                // Calculate the target week's Monday
+                const currentDay = now.getDay();
+                const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+                
+                // Start with this week's Monday
+                const thisMonday = new Date(now);
+                thisMonday.setDate(now.getDate() - daysFromMonday);
+                thisMonday.setHours(0, 0, 0, 0);
+                
+                // Go back by offset weeks
+                startDate = new Date(thisMonday);
+                startDate.setDate(startDate.getDate() - (periodOffset * 7));
+                
+                // End date is Sunday of that week (or today if offset is 0)
+                endDate = new Date(startDate);
+                endDate.setDate(endDate.getDate() + 6);
+                if (periodOffset === 0) {
+                    endDate = now; // Current week ends today
+                }
+                
                 groupBy = 'date';
+                
+                // Generate period label
+                if (periodOffset === 0) {
+                    periodLabel = 'This Week';
+                } else if (periodOffset === 1) {
+                    periodLabel = 'Last Week';
+                } else {
+                    const weekStartStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    const weekEndStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    periodLabel = `${weekStartStr} - ${weekEndStr}`;
+                }
                 break;
+                
             case 'month':
-                days = 30;
-                startDate.setDate(startDate.getDate() - 29);
+                // Calculate the target month
+                const targetMonth = new Date(now.getFullYear(), now.getMonth() - periodOffset, 1);
+                startDate = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1);
+                
+                // End is last day of month or today if current month
+                if (periodOffset === 0) {
+                    endDate = now;
+                } else {
+                    endDate = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0);
+                }
+                
                 groupBy = 'date';
+                
+                // Generate period label
+                if (periodOffset === 0) {
+                    periodLabel = 'This Month';
+                } else {
+                    periodLabel = startDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                }
                 break;
+                
             case 'year':
-                days = 365;
-                startDate.setFullYear(startDate.getFullYear() - 1);
+                // Calculate the target year
+                const targetYear = now.getFullYear() - periodOffset;
+                startDate = new Date(targetYear, 0, 1);
+                
+                // End is Dec 31 or today if current year
+                if (periodOffset === 0) {
+                    endDate = now;
+                } else {
+                    endDate = new Date(targetYear, 11, 31);
+                }
+                
                 groupBy = "strftime('%Y-%m', date)";
+                
+                // Generate period label
+                if (periodOffset === 0) {
+                    periodLabel = 'This Year';
+                } else {
+                    periodLabel = `${targetYear}`;
+                }
                 break;
+                
             default:
-                days = 7;
-                startDate.setDate(startDate.getDate() - 6);
+                startDate = new Date(now);
+                const defaultDay = startDate.getDay();
+                const defaultDaysFromMonday = defaultDay === 0 ? 6 : defaultDay - 1;
+                startDate.setDate(startDate.getDate() - defaultDaysFromMonday);
+                endDate = now;
                 groupBy = 'date';
+                periodLabel = 'This Week';
         }
+
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
 
         // Get emissions over time
         let emissionsQuery;
@@ -186,7 +270,7 @@ router.get('/charts', authenticateToken, (req, res) => {
             emissionsQuery = db.prepare(`
                 SELECT strftime('%Y-%m', date) as period, SUM(emissions) as total
                 FROM activities
-                WHERE user_id = ? AND date >= ?
+                WHERE user_id = ? AND date >= ? AND date <= ?
                 GROUP BY strftime('%Y-%m', date)
                 ORDER BY period
             `);
@@ -194,13 +278,13 @@ router.get('/charts', authenticateToken, (req, res) => {
             emissionsQuery = db.prepare(`
                 SELECT date as period, SUM(emissions) as total
                 FROM activities
-                WHERE user_id = ? AND date >= ?
+                WHERE user_id = ? AND date >= ? AND date <= ?
                 GROUP BY date
                 ORDER BY date
             `);
         }
 
-        const emissionsData = emissionsQuery.all(userId, startDate.toISOString().split('T')[0]);
+        const emissionsData = emissionsQuery.all(userId, startDateStr, endDateStr);
 
         // Generate labels and fill missing data
         const labels = [];
@@ -208,31 +292,42 @@ router.get('/charts', authenticateToken, (req, res) => {
         const emissionsMap = new Map(emissionsData.map(e => [e.period, e.total]));
 
         if (range === 'year') {
-            for (let i = 11; i >= 0; i--) {
-                const d = new Date();
-                d.setMonth(d.getMonth() - i);
+            // Year view: show all months
+            const targetYear = startDate.getFullYear();
+            const endMonth = periodOffset === 0 ? now.getMonth() : 11;
+            for (let i = 0; i <= endMonth; i++) {
+                const d = new Date(targetYear, i, 1);
                 const key = d.toISOString().slice(0, 7);
                 labels.push(d.toLocaleString('default', { month: 'short' }));
                 data.push(emissionsMap.get(key) || 0);
             }
         } else {
-            for (let i = days - 1; i >= 0; i--) {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                const key = d.toISOString().split('T')[0];
-                labels.push(range === 'week' ? d.toLocaleString('default', { weekday: 'short' }) : d.getDate().toString());
+            // Week and month: iterate through the date range
+            const tempDate = new Date(startDate);
+            tempDate.setHours(0, 0, 0, 0);
+            const endDateObj = new Date(endDate);
+            endDateObj.setHours(23, 59, 59, 999);
+            
+            while (tempDate <= endDateObj) {
+                const key = tempDate.toISOString().split('T')[0];
+                if (range === 'week') {
+                    labels.push(tempDate.toLocaleString('default', { weekday: 'short' }));
+                } else {
+                    labels.push(tempDate.getDate().toString());
+                }
                 data.push(emissionsMap.get(key) || 0);
+                tempDate.setDate(tempDate.getDate() + 1);
             }
         }
 
-        // Get category breakdown
+        // Get category breakdown for the period
         const categoryData = db.prepare(`
             SELECT category, SUM(emissions) as total
             FROM activities
-            WHERE user_id = ? AND date >= ?
+            WHERE user_id = ? AND date >= ? AND date <= ?
             GROUP BY category
             ORDER BY total DESC
-        `).all(userId, startDate.toISOString().split('T')[0]);
+        `).all(userId, startDateStr, endDateStr);
 
         const totalEmissions = categoryData.reduce((sum, c) => sum + c.total, 0) || 1;
         const categories = categoryData.map(c => ({
@@ -244,7 +339,11 @@ router.get('/charts', authenticateToken, (req, res) => {
         res.json({
             timeline: { labels, data },
             categories,
-            range
+            range,
+            offset: periodOffset,
+            periodLabel,
+            startDate: startDateStr,
+            endDate: endDateStr
         });
     } catch (error) {
         console.error('Chart data error:', error);

@@ -149,6 +149,16 @@ router.get('/me', authenticateToken, (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        // Recalculate level from XP to ensure accuracy
+        const { calculateLevel } = require('../utils/gamification');
+        const correctLevel = calculateLevel(user.xp || 0);
+        
+        // Update level in database if it's wrong
+        if (correctLevel !== user.level) {
+            db.prepare('UPDATE users SET level = ? WHERE id = ?').run(correctLevel, user.id);
+            user.level = correctLevel;
+        }
+
         // Get user badges
         const badges = db.prepare(`
             SELECT b.*, ub.earned_at

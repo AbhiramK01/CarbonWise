@@ -103,59 +103,52 @@ router.get('/', optionalAuth, (req, res) => {
     }
 });
 
-// Get weekly leaderboard (by reduction this week)
+// Get weekly leaderboard (by XP - same as global since we don't track weekly XP)
 router.get('/weekly', optionalAuth, (req, res) => {
     try {
         const { limit = 20 } = req.query;
         const userId = req.user?.id;
 
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+        // Use calendar week: Monday to Sunday
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        
+        const weekStart = new Date(now);
+        weekStart.setDate(weekStart.getDate() - daysFromMonday);
+        const weekStartStr = weekStart.toISOString().split('T')[0];
 
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-        const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
-
-        // Get users with their weekly emissions and previous week for comparison
+        // Get users ranked by XP (sorted properly)
         const leaderboard = db.prepare(`
             SELECT 
                 u.id,
                 u.username,
                 u.xp,
                 u.level,
+                u.streak,
                 COALESCE(
                     (SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ?),
                     0
-                ) as this_week,
+                ) as this_week_emissions,
                 COALESCE(
-                    (SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ? AND date < ?),
+                    (SELECT COUNT(*) FROM activities WHERE user_id = u.id AND date >= ?),
                     0
-                ) as last_week
+                ) as this_week_activities
             FROM users u
-            WHERE EXISTS (SELECT 1 FROM activities WHERE user_id = u.id)
-            ORDER BY 
-                CASE 
-                    WHEN COALESCE((SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ? AND date < ?), 0) > 0 
-                    THEN (COALESCE((SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ? AND date < ?), 0) - COALESCE((SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ?), 0)) / COALESCE((SELECT SUM(emissions) FROM activities WHERE user_id = u.id AND date >= ? AND date < ?), 1)
-                    ELSE 0
-                END DESC
+            ORDER BY u.xp DESC
             LIMIT ?
-        `).all(weekAgoStr, twoWeeksAgoStr, weekAgoStr, twoWeeksAgoStr, weekAgoStr, twoWeeksAgoStr, weekAgoStr, weekAgoStr, twoWeeksAgoStr, weekAgoStr, parseInt(limit));
+        `).all(weekStartStr, weekStartStr, parseInt(limit));
 
         const rankedLeaderboard = leaderboard.map((user, index) => {
-            const improvement = user.last_week > 0 
-                ? Math.round(((user.last_week - user.this_week) / user.last_week) * 100)
-                : 0;
-
             return {
                 rank: index + 1,
                 id: user.id,
                 username: user.username,
                 xp: user.xp,
                 level: user.level,
-                thisWeekEmissions: user.this_week.toFixed(1),
-                improvementPercent: improvement,
+                streak: user.streak,
+                thisWeekEmissions: user.this_week_emissions.toFixed(1),
+                thisWeekActivities: user.this_week_activities,
                 isCurrentUser: userId && user.id === userId
             };
         });
@@ -163,7 +156,7 @@ router.get('/weekly', optionalAuth, (req, res) => {
         res.json({
             leaderboard: rankedLeaderboard,
             period: 'weekly',
-            startDate: weekAgoStr
+            startDate: weekStartStr
         });
     } catch (error) {
         console.error('Weekly leaderboard error:', error);

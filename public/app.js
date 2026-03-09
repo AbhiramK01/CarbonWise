@@ -3171,7 +3171,7 @@ function renderGoals(goals) {
                     </div>
                     <div class="goal-progress">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: 100%; background: var(--success-green);"></div>
+                            <div class="progress-fill" style="width: 100%; background: var(--primary-green);"></div>
                         </div>
                         <div class="progress-stats">
                             <span>${goal.target_value} ${goal.type.includes('streak') ? 'days' : 'kg CO₂'} - Completed!</span>

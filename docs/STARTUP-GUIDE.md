@@ -48,6 +48,21 @@ This installs:
 - node-fetch (HTTP client)
 - And other dependencies...
 
+### Step 2.5: (Optional) Seed Demo Users
+
+```bash
+node seed-users.js
+```
+
+This creates 5 demo users with activity history for testing:
+- `alex.commuter@demo.com` - High transport emissions
+- `bella.foodie@demo.com` - High diet emissions  
+- `charlie.homebody@demo.com` - High electricity usage
+- `diana.average@demo.com` - Balanced lifestyle
+- `evan.green@demo.com` - Eco-conscious
+
+**All passwords: `demo123`**
+
 ### Step 3: Install Python ML Dependencies
 
 ```bash

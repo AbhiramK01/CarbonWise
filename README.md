@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.icons8.com/fluency/96/co2.png" alt="CarbonWise Logo"/>
+  <img src="assets/logo.png" alt="CarbonWise Logo" width="300"/>
 </p>
 
-<h1 align="center">🌱 CarbonWise</h1>
+<h1 align="center">CarbonWise</h1>
 
 <p align="center">
   <strong>Your Personal Carbon Footprint Tracker with AI-Powered Insights</strong>

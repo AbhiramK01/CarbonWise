@@ -4044,9 +4044,9 @@ async function loadXPHistory(append = false) {
                 if (entry.activity.emissions) {
                     subInfo += ` (${parseFloat(entry.activity.emissions).toFixed(1)} kg CO₂)`;
                 }
-            } else if (entry.goal && entry.goalId) {
+            } else if (entry.goalId && entry.goal && entry.goal.title) {
                 subInfo = `Goal: ${entry.goal.title}`;
-            } else if (entry.badge && entry.badgeId) {
+            } else if (entry.badgeId && entry.badge && entry.badge.name) {
                 subInfo = `Badge: ${entry.badge.name}`;
             }
             

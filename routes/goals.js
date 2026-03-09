@@ -108,7 +108,7 @@ router.post('/', authenticateToken, (req, res) => {
             endDate.toISOString().split('T')[0]
         );
 
-        const goalId = result.lastInsertRowid;
+        const goalId = Number(result.lastInsertRowid);
 
         // Award XP for creating a goal (linked to this goal)
         awardXP(req.user.id, 15, 'goal', `Created goal: ${goalTitle}`, { goalId });
@@ -237,7 +237,7 @@ router.put('/:id/abandon', authenticateToken, (req, res) => {
 // Delete goal
 router.delete('/:id', authenticateToken, (req, res) => {
     try {
-        const { id } = req.params;
+        const id = parseInt(req.params.id);
 
         const goal = db.prepare('SELECT * FROM goals WHERE id = ? AND user_id = ?').get(id, req.user.id);
         if (!goal) {

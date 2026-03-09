@@ -3186,6 +3186,10 @@ async function deleteGoal(id) {
         loadGoals();
         loadUserProfile(); // Refresh XP display
         
+        // Refresh XP history list to remove deleted entry
+        xpHistoryOffset = 0;
+        loadXPHistory();
+        
         // Show toast with XP deduction info
         const xpMsg = result.xpDeducted > 0 
             ? `Goal deleted. -${result.xpDeducted} XP`

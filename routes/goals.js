@@ -108,10 +108,12 @@ router.post('/', authenticateToken, (req, res) => {
             endDate.toISOString().split('T')[0]
         );
 
-        // Award XP for creating a goal
-        awardXP(req.user.id, 15);
+        const goalId = result.lastInsertRowid;
 
-        const goal = db.prepare('SELECT * FROM goals WHERE id = ?').get(result.lastInsertRowid);
+        // Award XP for creating a goal (linked to this goal)
+        awardXP(req.user.id, 15, 'goal', `Created goal: ${goalTitle}`, { goalId });
+
+        const goal = db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
 
         res.status(201).json({
             message: 'Goal created successfully',
@@ -146,7 +148,7 @@ router.put('/:id/progress', authenticateToken, (req, res) => {
         if (newValue >= goal.target_value && goal.status === 'active') {
             status = 'completed';
             xpAwarded = goal.xp_reward;
-            awardXP(req.user.id, goal.xp_reward);
+            awardXP(req.user.id, goal.xp_reward, 'goal', `Completed goal: ${goal.title}`, { goalId: parseInt(id) });
             checkBadges(req.user.id);
         }
 

@@ -181,15 +181,31 @@ router.get('/me', authenticateToken, (req, res) => {
 // Update user profile
 router.put('/me', authenticateToken, async (req, res) => {
     try {
-        const { username } = req.body;
+        const { username, email } = req.body;
 
+        // Check if username is already taken
         if (username) {
-            const existingUser = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.user.id);
-            if (existingUser) {
+            const existingUsername = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.user.id);
+            if (existingUsername) {
                 return res.status(400).json({ error: 'Username already taken' });
             }
+        }
 
-            db.prepare('UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(username, req.user.id);
+        // Check if email is already taken
+        if (email) {
+            const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.user.id);
+            if (existingEmail) {
+                return res.status(400).json({ error: 'Email already in use' });
+            }
+        }
+
+        // Update fields
+        if (username && email) {
+            db.prepare('UPDATE users SET username = ?, email = ? WHERE id = ?').run(username, email, req.user.id);
+        } else if (username) {
+            db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, req.user.id);
+        } else if (email) {
+            db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, req.user.id);
         }
 
         const user = db.prepare('SELECT id, email, username, xp, level, streak FROM users WHERE id = ?').get(req.user.id);

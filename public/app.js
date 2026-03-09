@@ -328,6 +328,9 @@ function showSection(sectionId) {
             loadGoals();
             loadUserProfile();
             loadLeaderboard();
+            // Always refresh XP history data when switching to goals
+            xpHistoryOffset = 0;
+            loadXPHistory();
             break;
     }
 }
@@ -1658,7 +1661,7 @@ async function saveActivity() {
         const url = isEditing ? `/activities/${editingActivityId}` : '/activities';
         const method = isEditing ? 'PUT' : 'POST';
         
-        await apiRequest(url, {
+        const result = await apiRequest(url, {
             method,
             body: JSON.stringify({
                 category,
@@ -1675,7 +1678,17 @@ async function saveActivity() {
         closeAddActivityModal();
         loadActivityLog();
         loadDashboard();
-        showToast(isEditing ? 'Activity updated!' : 'Activity logged successfully!', 'success');
+        
+        // Show XP earned notification with details
+        const xpMsg = result.xpDetails?.leveledUp 
+            ? `Activity logged! +10 XP - Level Up to ${result.xpDetails.newLevel}!`
+            : `Activity logged! +10 XP`;
+        showToast(isEditing ? 'Activity updated!' : xpMsg, 'success');
+        
+        // Always refresh XP history data (reset offset to show new entry at top)
+        xpHistoryOffset = 0;
+        loadXPHistory();
+        
         editingActivityId = null;
     } catch (error) {
         showToast(error.message, 'error');
@@ -1683,13 +1696,23 @@ async function saveActivity() {
 }
 
 async function deleteActivity(id) {
-    if (!confirm('Delete this activity?')) return;
+    if (!confirm('Delete this activity? This will also remove the XP earned from it.')) return;
     
     try {
-        await apiRequest(`/activities/${id}`, { method: 'DELETE' });
+        const result = await apiRequest(`/activities/${id}`, { method: 'DELETE' });
         loadActivityLog();
         loadDashboard(); // Refresh dashboard stats
-        showToast('Activity deleted', 'success');
+        loadUserProfile(); // Refresh XP display in goals section
+        
+        // Refresh XP history to remove the deleted entry
+        xpHistoryOffset = 0;
+        loadXPHistory();
+        
+        // Show toast with XP deduction info
+        const xpMsg = result.xpDeducted > 0 
+            ? `Activity deleted. -${result.xpDeducted} XP`
+            : 'Activity deleted';
+        showToast(xpMsg, 'success');
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -3514,33 +3537,73 @@ function closeProfileModal() {
     if (modal) modal.classList.remove('active');
 }
 
-function openSettingsModal() {
-    const modal = document.getElementById('settings-modal');
-    if (modal) modal.classList.add('active');
+// Save profile changes
+async function saveProfile() {
+    const usernameEl = document.getElementById('profile-username');
+    const emailEl = document.getElementById('profile-email');
+    
+    const username = usernameEl?.value?.trim();
+    const email = emailEl?.value?.trim();
+    
+    if (!username || !email) {
+        showToast('Username and email are required', 'error');
+        return;
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showToast('Please enter a valid email address', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/auth/me', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ username, email })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            showToast(data.error || 'Failed to update profile', 'error');
+            return;
+        }
+        
+        // Update stored user data
+        const currentUser = getUser();
+        if (currentUser) {
+            currentUser.username = data.user.username;
+            currentUser.name = data.user.username;
+            currentUser.email = data.user.email;
+            localStorage.setItem('user', JSON.stringify(currentUser));
+        }
+        
+        // Update navbar username display
+        const usernameDisplay = document.getElementById('username-display');
+        if (usernameDisplay) {
+            usernameDisplay.textContent = data.user.username;
+        }
+        
+        showToast('Profile updated successfully', 'success');
+        closeProfileModal();
+    } catch (error) {
+        console.error('Error saving profile:', error);
+        showToast('Failed to save profile: ' + error.message, 'error');
+    }
 }
 
-function closeSettingsModal() {
-    const modal = document.getElementById('settings-modal');
-    if (modal) modal.classList.remove('active');
-}
-
-function saveSettings() {
-    const theme = document.getElementById('theme-select')?.value || 'light';
-    const dailyReminders = document.getElementById('daily-reminders')?.checked;
-    const weeklyReports = document.getElementById('weekly-reports')?.checked;
-    
-    // Save to localStorage
-    localStorage.setItem('settings', JSON.stringify({
-        theme,
-        dailyReminders,
-        weeklyReports
-    }));
-    
-    // Apply theme immediately
-    applyTheme(theme);
-    
-    closeSettingsModal();
-    showToast('Settings saved!', 'success');
+// Theme toggle functionality
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeIcon(newTheme);
 }
 
 function applyTheme(theme) {
@@ -3549,22 +3612,34 @@ function applyTheme(theme) {
     } else {
         document.documentElement.removeAttribute('data-theme');
     }
+    updateThemeIcon(theme);
+}
+
+function updateThemeIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    const iconOut = document.getElementById('theme-icon-out');
+    const iconClass = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    if (icon) icon.className = iconClass;
+    if (iconOut) iconOut.className = iconClass;
 }
 
 function loadSettings() {
-    const settings = JSON.parse(localStorage.getItem('settings') || '{}');
-    
-    const themeSelect = document.getElementById('theme-select');
-    const dailyReminders = document.getElementById('daily-reminders');
-    const weeklyReports = document.getElementById('weekly-reports');
-    
-    if (themeSelect && settings.theme) themeSelect.value = settings.theme;
-    if (dailyReminders) dailyReminders.checked = settings.dailyReminders !== false;
-    if (weeklyReports) weeklyReports.checked = settings.weeklyReports !== false;
-    
-    // Apply saved theme
-    applyTheme(settings.theme || 'light');
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    applyTheme(savedTheme);
 }
+
+// Initialize theme toggle button
+document.addEventListener('DOMContentLoaded', () => {
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeToggleOut = document.getElementById('theme-toggle-out');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+    if (themeToggleOut) {
+        themeToggleOut.addEventListener('click', toggleTheme);
+    }
+});
 
 async function saveGoal() {
     const type = document.getElementById('goal-type').value;
@@ -3610,7 +3685,7 @@ async function saveGoal() {
             showToast('Goal updated!', 'success');
         } else {
             // Create new goal
-            await apiRequest('/goals', {
+            const result = await apiRequest('/goals', {
                 method: 'POST',
                 body: JSON.stringify({
                     title: title || goalTitles[type] || 'Custom Goal',
@@ -3620,7 +3695,13 @@ async function saveGoal() {
                     xp_reward: xpReward
                 })
             });
-            showToast('Goal created! Log activities to make progress.', 'success');
+            showToast(`Goal created! +${result.xpAwarded || 15} XP`, 'success');
+            
+            // Refresh XP history if visible
+            const xpContent = document.getElementById('xp-history-content');
+            if (xpContent && xpContent.style.display !== 'none') {
+                loadXPHistory();
+            }
         }
         
         closeAddGoalModal();
@@ -3731,18 +3812,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('user-dropdown-menu')?.classList.remove('show');
         openProfileModal();
     });
-    document.getElementById('settings-link')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('user-dropdown-menu')?.classList.remove('show');
-        openSettingsModal();
-    });
     
-    // Profile/Settings modal backdrop close
+    // Profile modal backdrop close
     document.getElementById('profile-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'profile-modal') closeProfileModal();
-    });
-    document.getElementById('settings-modal')?.addEventListener('click', (e) => {
-        if (e.target.id === 'settings-modal') closeSettingsModal();
     });
     
     // Auth tabs
@@ -3918,3 +3991,120 @@ function validateReportDateRange() {
         }
     }
 }
+
+// ===== XP History Functions =====
+let xpHistoryOffset = 0;
+const XP_HISTORY_LIMIT = 20;
+
+async function loadXPHistory(append = false) {
+    if (!isLoggedIn()) return;
+    
+    const container = document.getElementById('xp-history-list');
+    const loadMoreBtn = document.getElementById('load-more-xp');
+    if (!container) return;
+    
+    if (!append) {
+        xpHistoryOffset = 0;
+        container.innerHTML = '<div class="xp-history-empty"><i class="fas fa-spinner fa-spin"></i><p>Loading...</p></div>';
+    }
+    
+    try {
+        const data = await apiRequest(`/stats/xp-history?limit=${XP_HISTORY_LIMIT}&offset=${xpHistoryOffset}`);
+        
+        if (!append) {
+            container.innerHTML = '';
+        }
+        
+        if (data.history.length === 0 && xpHistoryOffset === 0) {
+            container.innerHTML = '<div class="xp-history-empty"><i class="fas fa-history"></i><p>No XP history yet. Start logging activities to earn XP!</p></div>';
+            if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+            return;
+        }
+        
+        const html = data.history.map(entry => {
+            const date = new Date(entry.date);
+            const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            const iconMap = {
+                'activity': 'fa-plus-circle',
+                'badge': 'fa-medal',
+                'goal': 'fa-bullseye'
+            };
+            const icon = iconMap[entry.source] || 'fa-star';
+            
+            // Build description with linked data for integrity
+            let desc = entry.description || entry.source;
+            let subInfo = '';
+            
+            if (entry.activity && entry.activityId) {
+                // Show linked activity details
+                subInfo = `${entry.activity.category}: ${entry.activity.description}`;
+                if (entry.activity.emissions) {
+                    subInfo += ` (${parseFloat(entry.activity.emissions).toFixed(1)} kg CO₂)`;
+                }
+            } else if (entry.goal && entry.goalId) {
+                subInfo = `Goal: ${entry.goal.title}`;
+            } else if (entry.badge && entry.badgeId) {
+                subInfo = `Badge: ${entry.badge.name}`;
+            }
+            
+            return `
+                <div class="xp-history-item" data-activity-id="${entry.activityId || ''}" data-goal-id="${entry.goalId || ''}" data-badge-id="${entry.badgeId || ''}">
+                    <div class="xp-history-info">
+                        <div class="xp-history-icon ${entry.source}">
+                            <i class="fas ${icon}"></i>
+                        </div>
+                        <div class="xp-history-details">
+                            <span class="xp-history-desc">${desc}</span>
+                            ${subInfo ? `<span class="xp-history-subinfo">${subInfo}</span>` : ''}
+                            <span class="xp-history-date">${dateStr} at ${timeStr}</span>
+                        </div>
+                    </div>
+                    <span class="xp-history-amount">+${entry.amount} XP</span>
+                </div>
+            `;
+        }).join('');
+        
+        container.insertAdjacentHTML('beforeend', html);
+        xpHistoryOffset += data.history.length;
+        
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = data.pagination.hasMore ? 'block' : 'none';
+        }
+    } catch (error) {
+        console.error('Failed to load XP history:', error);
+        if (!append) {
+            container.innerHTML = '<div class="xp-history-empty"><i class="fas fa-exclamation-circle"></i><p>Failed to load XP history</p></div>';
+        }
+    }
+}
+
+function initXPHistoryListeners() {
+    const toggleBtn = document.getElementById('toggle-xp-history');
+    const content = document.getElementById('xp-history-content');
+    const loadMoreBtn = document.getElementById('load-more-xp');
+    
+    if (toggleBtn && content) {
+        toggleBtn.addEventListener('click', () => {
+            const isVisible = content.style.display !== 'none';
+            content.style.display = isVisible ? 'none' : 'block';
+            toggleBtn.innerHTML = isVisible 
+                ? '<i class="fas fa-chevron-down"></i> Show'
+                : '<i class="fas fa-chevron-up"></i> Hide';
+            
+            if (!isVisible) {
+                // Refresh data when expanding
+                xpHistoryOffset = 0;
+                loadXPHistory();
+            }
+        });
+    }
+    
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', () => loadXPHistory(true));
+    }
+}
+
+// Initialize XP history listeners on page load
+document.addEventListener('DOMContentLoaded', initXPHistoryListeners);

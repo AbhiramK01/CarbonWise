@@ -82,6 +82,9 @@
                     <i class="fas fa-fire"></i>
                     <span id="streak-count">0</span> day streak
                 </div>
+                <button class="theme-toggle-btn" id="theme-toggle" title="Toggle theme">
+                    <i class="fas fa-moon" id="theme-icon"></i>
+                </button>
                 <div class="user-dropdown">
                     <button class="user-avatar-btn" id="user-dropdown-btn">
                         <i class="fas fa-user-circle"></i>
@@ -94,13 +97,15 @@
                             <span class="dropdown-xp"><span id="dropdown-xp">0</span> XP</span>
                         </div>
                         <a href="#" class="dropdown-item" id="profile-link"><i class="fas fa-user"></i> Profile</a>
-                        <a href="#" class="dropdown-item" id="settings-link"><i class="fas fa-cog"></i> Settings</a>
                         <hr class="dropdown-divider">
                         <a href="#" class="dropdown-item" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
                     </div>
                 </div>
             </div>
             <div class="nav-user" id="nav-user-logged-out">
+                <button class="theme-toggle-btn" id="theme-toggle-out" title="Toggle theme">
+                    <i class="fas fa-moon" id="theme-icon-out"></i>
+                </button>
                 <button class="btn-primary" id="show-auth-btn">
                     <i class="fas fa-sign-in-alt"></i> Login
                 </button>
@@ -840,7 +845,7 @@
         <!-- Goals Section -->
         <section id="goals" class="section">
             <div class="section-header">
-                <h1>Green Goals & Achievements</h1>
+                <h1>Green Goals</h1>
                 <p>Set targets, track progress, and earn badges</p>
             </div>
 
@@ -870,6 +875,24 @@
                             <span class="stat-label">Badges</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- XP History -->
+            <div class="xp-history-section">
+                <div class="xp-history-header">
+                    <h2><i class="fas fa-history"></i> XP History</h2>
+                    <button class="btn-secondary" id="toggle-xp-history">
+                        <i class="fas fa-chevron-up"></i> Hide
+                    </button>
+                </div>
+                <div class="xp-history-content" id="xp-history-content">
+                    <div class="xp-history-list" id="xp-history-list">
+                        <!-- XP history entries will be populated by JavaScript -->
+                    </div>
+                    <button class="btn-secondary" id="load-more-xp" style="display: none; margin-top: 1rem; width: 100%;">
+                        <i class="fas fa-plus"></i> Load More
+                    </button>
                 </div>
             </div>
 
@@ -955,20 +978,11 @@
                 </div>
             </div>
 
-            <!-- Achievements -->
-            <div class="achievements-section">
-                <h2>Achievements</h2>
-                <div class="badges-grid" id="badges-grid">
-                    <!-- Badges will be populated by JavaScript -->
-                </div>
-            </div>
-
             <!-- Leaderboard -->
             <div class="leaderboard-section">
                 <h2>Community Leaderboard</h2>
                 <div class="leaderboard-tabs">
                     <button class="lb-tab active" data-lb="global">Global</button>
-                    <button class="lb-tab" data-lb="weekly">This Week</button>
                     <button class="lb-tab" data-lb="streak">Best Streaks</button>
                 </div>
                 <div class="leaderboard-list" id="leaderboard-list">
@@ -1034,11 +1048,11 @@
                 <div class="profile-info">
                     <div class="form-group">
                         <label>Username</label>
-                        <input type="text" id="profile-username" readonly>
+                        <input type="text" id="profile-username" placeholder="Enter username">
                     </div>
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" id="profile-email" readonly>
+                        <input type="email" id="profile-email" placeholder="Enter email">
                     </div>
                     <div class="profile-stats-grid">
                         <div class="profile-stat">
@@ -1057,45 +1071,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeProfileModal()">Close</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div class="modal" id="settings-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-cog"></i> Settings</h3>
-                <button class="modal-close" onclick="closeSettingsModal()"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="settings-section">
-                    <h4>Display</h4>
-                    <div class="form-group">
-                        <label for="theme-select">Theme</label>
-                        <select id="theme-select">
-                            <option value="light">Light Mode</option>
-                            <option value="dark" selected>Dark Mode</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <h4>Notifications</h4>
-                    <div class="setting-toggle">
-                        <label>Daily Reminders</label>
-                        <input type="checkbox" id="daily-reminders" checked>
-                    </div>
-                    <div class="setting-toggle">
-                        <label>Weekly Reports</label>
-                        <input type="checkbox" id="weekly-reports" checked>
-                    </div>
-                </div>
-
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
-                <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+                <button class="btn-secondary" onclick="closeProfileModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveProfile()">Save Changes</button>
             </div>
         </div>
     </div>

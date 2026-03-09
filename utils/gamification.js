@@ -40,7 +40,8 @@ const LEVEL_TITLES = [
 ];
 
 // Award XP to user
-function awardXP(userId, amount) {
+// refs = { activityId, goalId, badgeId } - optional references to link XP entry
+function awardXP(userId, amount, source = 'activity', description = null, refs = {}) {
     try {
         const user = db.prepare('SELECT xp, level FROM users WHERE id = ?').get(userId);
         if (!user) return null;
@@ -51,6 +52,13 @@ function awardXP(userId, amount) {
 
         db.prepare('UPDATE users SET xp = ?, level = ? WHERE id = ?').run(newXP, newLevel, userId);
 
+        // Log XP to history with optional references
+        const { activityId = null, goalId = null, badgeId = null } = refs;
+        const createdAt = new Date().toISOString();
+        const result = db.prepare(
+            'INSERT INTO xp_history (user_id, amount, source, description, activity_id, goal_id, badge_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(userId, amount, source, description, activityId, goalId, badgeId, createdAt);
+
         return {
             previousXP: user.xp,
             newXP,
@@ -58,7 +66,8 @@ function awardXP(userId, amount) {
             previousLevel: user.level,
             newLevel,
             leveledUp,
-            levelTitle: LEVEL_TITLES[newLevel - 1] || 'Eco Master'
+            levelTitle: LEVEL_TITLES[newLevel - 1] || 'Eco Master',
+            xpHistoryId: result.lastInsertRowid
         };
     } catch (error) {
         console.error('Award XP error:', error);
@@ -165,8 +174,8 @@ function checkBadges(userId) {
                 // Award badge
                 db.prepare('INSERT INTO user_badges (user_id, badge_id) VALUES (?, ?)').run(userId, badge.id);
                 
-                // Award XP for badge
-                awardXP(userId, badge.xp_reward);
+                // Award XP for badge (linked to this badge)
+                awardXP(userId, badge.xp_reward, 'badge', `Earned badge: ${badge.name}`, { badgeId: badge.id });
 
                 earnedBadges.push({
                     id: badge.id,
@@ -372,7 +381,7 @@ function updateGoalProgress(userId, category, activityType, value, emissions) {
                 if (newValue >= goal.target_value && goal.status === 'active') {
                     status = 'completed';
                     xpAwarded = goal.xp_reward || 100;
-                    awardXP(userId, xpAwarded);
+                    awardXP(userId, xpAwarded, 'goal', `Completed goal: ${goal.title}`, { goalId: goal.id });
                 }
 
                 db.prepare('UPDATE goals SET current_value = ?, status = ? WHERE id = ?')

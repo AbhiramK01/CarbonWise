@@ -148,6 +148,27 @@ input, select {
     50% { transform: scale(1.2); }
 }
 
+.theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: var(--transition);
+    font-size: 1.1rem;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--primary-green);
+    color: white;
+    transform: scale(1.1);
+}
+
 .user-avatar {
     font-size: 2rem;
     color: var(--text-secondary);
@@ -4272,4 +4293,125 @@ input[type="range"]::-webkit-slider-thumb {
     .trend-summary {
         grid-template-columns: 1fr;
     }
+}
+
+/* ===== XP History Section ===== */
+.xp-history-section {
+    margin-bottom: 2rem;
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+}
+
+.xp-history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.xp-history-header h2 {
+    font-size: 1.3rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.xp-history-header h2 i {
+    color: var(--accent);
+}
+
+.xp-history-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.xp-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.xp-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border-radius: calc(var(--border-radius) / 2);
+    transition: transform 0.2s ease;
+}
+
+.xp-history-item:hover {
+    transform: translateX(5px);
+}
+
+.xp-history-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.xp-history-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gradient-green);
+    color: white;
+    font-size: 0.9rem;
+}
+
+.xp-history-icon.badge {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+}
+
+.xp-history-icon.goal {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.xp-history-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.xp-history-desc {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.xp-history-subinfo {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.xp-history-date {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.xp-history-amount {
+    font-weight: 700;
+    color: var(--success);
+    font-size: 1rem;
+}
+
+.xp-history-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.xp-history-empty i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
 }

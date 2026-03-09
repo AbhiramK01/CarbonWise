@@ -8,7 +8,8 @@
  * 4. balanced - Even distribution across categories
  * 5. eco_conscious - Low emissions overall
  * 
- * Activity period: January 1, 2026 - February 28, 2026 (59 days)
+ * Includes: XP calculation, streak tracking, and XP history
+ * Activity period: January 1, 2026 - Today
  */
 
 const initSqlJs = require('sql.js');
@@ -17,6 +18,22 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 
 const DB_PATH = path.join(__dirname, 'database', 'carbonwise.db');
+
+// XP Constants (matching gamification.js)
+const XP_PER_ACTIVITY = 10;
+const LEVEL_THRESHOLDS = [
+    0, 200, 500, 1000, 1800, 2800, 4000, 5500, 7500, 10000,
+    13000, 16500, 20500, 25000, 30000
+];
+
+function calculateLevel(xp) {
+    for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+        if (xp >= LEVEL_THRESHOLDS[i]) {
+            return i + 1;
+        }
+    }
+    return 1;
+}
 
 // User profiles
 const USERS = [
@@ -295,6 +312,25 @@ async function seedDatabase() {
         )
     `);
     
+    // Create xp_history table with activity/goal/badge references
+    db.run(`
+        CREATE TABLE IF NOT EXISTS xp_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            description TEXT,
+            activity_id INTEGER,
+            goal_id INTEGER,
+            badge_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE SET NULL,
+            FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL,
+            FOREIGN KEY (badge_id) REFERENCES badges(id) ON DELETE SET NULL
+        )
+    `);
+    
     // Date range: Jan 1, 2026 to today
     const startDate = new Date('2026-01-01');
     const endDate = new Date(); // Use current date
@@ -314,8 +350,9 @@ async function seedDatabase() {
         
         if (existing.length > 0 && existing[0].values.length > 0) {
             userId = existing[0].values[0][0];
-            console.log(`   ⚠️  User exists (ID: ${userId}), deleting old activities...`);
+            console.log(`   ⚠️  User exists (ID: ${userId}), deleting old activities and xp_history...`);
             db.run(`DELETE FROM activities WHERE user_id = ${userId}`);
+            db.run(`DELETE FROM xp_history WHERE user_id = ${userId}`);
         } else {
             // Hash password and create user
             const hashedPassword = bcrypt.hashSync(user.password, 10);
@@ -338,6 +375,9 @@ async function seedDatabase() {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
+        // Track inserted activity IDs for XP history linking
+        const activityIds = [];
+        
         for (const activity of activities) {
             insertStmt.run([
                 activity.user_id,
@@ -349,8 +389,57 @@ async function seedDatabase() {
                 activity.date,
                 activity.created_at
             ]);
+            // Get the last inserted activity ID
+            const lastId = db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+            activityIds.push({ id: lastId, activity });
         }
         insertStmt.free();
+        
+        // Calculate XP (10 XP per activity)
+        const totalXP = activities.length * XP_PER_ACTIVITY;
+        const level = calculateLevel(totalXP);
+        
+        // Calculate streak (consecutive days with activities ending today or yesterday)
+        const uniqueDates = [...new Set(activities.map(a => a.date))].sort().reverse();
+        let streak = 0;
+        const today = formatDate(new Date());
+        const yesterday = formatDate(new Date(Date.now() - 86400000));
+        
+        // Check if user has logged activity today or yesterday (active streak)
+        if (uniqueDates.includes(today) || uniqueDates.includes(yesterday)) {
+            // Count consecutive days
+            let checkDate = new Date(uniqueDates[0]); // Start from most recent activity
+            for (let i = 0; i < uniqueDates.length; i++) {
+                const expectedDate = formatDate(checkDate);
+                if (uniqueDates.includes(expectedDate)) {
+                    streak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // Update user with XP, level, streak
+        db.run(`UPDATE users SET xp = ${totalXP}, level = ${level}, streak = ${streak}, last_activity_date = '${uniqueDates[0]}' WHERE id = ${userId}`);
+        
+        // Seed XP history - one entry per activity, linked by activity_id
+        const insertXPHistory = db.prepare(`
+            INSERT INTO xp_history (user_id, amount, source, description, activity_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        
+        for (const { id: activityId, activity } of activityIds) {
+            insertXPHistory.run([
+                userId,
+                XP_PER_ACTIVITY,
+                'activity',
+                `Logged ${activity.category}: ${activity.description}`,
+                activityId,
+                activity.created_at
+            ]);
+        }
+        insertXPHistory.free();
         
         // Calculate stats
         const stats = {
@@ -367,6 +456,10 @@ async function seedDatabase() {
         console.log(`      Diet:        ${stats.diet.toFixed(1)} kg (${(stats.diet/total*100).toFixed(1)}%)`);
         console.log(`      Waste:       ${stats.waste.toFixed(1)} kg (${(stats.waste/total*100).toFixed(1)}%)`);
         console.log(`      TOTAL:       ${total.toFixed(1)} kg CO₂`);
+        console.log(`   🎮 Gamification:`);
+        console.log(`      XP:     ${totalXP} (Level ${level})`);
+        console.log(`      Streak: ${streak} days`);
+        console.log(`      XP History: ${activityIds.length} entries (1:1 with activities)`);
         console.log();
         
         totalActivities += activities.length;

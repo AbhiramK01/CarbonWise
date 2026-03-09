@@ -444,4 +444,104 @@ router.get('/summary/:date', authenticateToken, (req, res) => {
     }
 });
 
+// Get XP History for the user
+router.get('/xp-history', authenticateToken, (req, res) => {
+    try {
+        const userId = req.user.id;
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = parseInt(req.query.offset) || 0;
+        
+        // Get XP history entries
+        // Get XP history entries with linked activity/goal/badge info
+        const history = db.prepare(`
+            SELECT 
+                xh.id, xh.amount, xh.source, xh.description, xh.created_at,
+                xh.activity_id, xh.goal_id, xh.badge_id,
+                a.category as activity_category, a.description as activity_description, a.emissions as activity_emissions,
+                g.title as goal_title, g.type as goal_type,
+                b.name as badge_name, b.icon as badge_icon
+            FROM xp_history xh
+            LEFT JOIN activities a ON xh.activity_id = a.id
+            LEFT JOIN goals g ON xh.goal_id = g.id
+            LEFT JOIN badges b ON xh.badge_id = b.id
+            WHERE xh.user_id = ?
+            ORDER BY xh.created_at DESC
+            LIMIT ? OFFSET ?
+        `).all(userId, limit, offset);
+        
+        // Get total count
+        const totalResult = db.prepare(`
+            SELECT COUNT(*) as total FROM xp_history WHERE user_id = ?
+        `).get(userId);
+        
+        // Get summary stats
+        const summaryResult = db.prepare(`
+            SELECT 
+                SUM(amount) as total_xp,
+                COUNT(*) as total_entries,
+                MIN(created_at) as first_entry,
+                MAX(created_at) as last_entry
+            FROM xp_history 
+            WHERE user_id = ?
+        `).get(userId);
+        
+        // Group by source for breakdown
+        const bySource = db.prepare(`
+            SELECT source, SUM(amount) as total, COUNT(*) as count
+            FROM xp_history
+            WHERE user_id = ?
+            GROUP BY source
+            ORDER BY total DESC
+        `).all(userId);
+        
+        res.json({
+            history: history.map(entry => ({
+                id: entry.id,
+                amount: entry.amount,
+                source: entry.source,
+                description: entry.description,
+                date: entry.created_at,
+                // Include linked references for data integrity
+                activityId: entry.activity_id,
+                goalId: entry.goal_id,
+                badgeId: entry.badge_id,
+                // Include details from linked records
+                activity: entry.activity_id ? {
+                    category: entry.activity_category,
+                    description: entry.activity_description,
+                    emissions: entry.activity_emissions
+                } : null,
+                goal: entry.goal_id ? {
+                    title: entry.goal_title,
+                    type: entry.goal_type
+                } : null,
+                badge: entry.badge_id ? {
+                    name: entry.badge_name,
+                    icon: entry.badge_icon
+                } : null
+            })),
+            pagination: {
+                total: totalResult.total,
+                limit,
+                offset,
+                hasMore: offset + history.length < totalResult.total
+            },
+            summary: {
+                totalXP: summaryResult.total_xp || 0,
+                totalEntries: summaryResult.total_entries || 0,
+                firstEntry: summaryResult.first_entry,
+                lastEntry: summaryResult.last_entry
+            },
+            breakdown: bySource.map(item => ({
+                source: item.source,
+                totalXP: item.total,
+                count: item.count
+            }))
+        });
+    } catch (error) {
+        console.error('XP history error:', error);
+        res.status(500).json({ error: 'Failed to fetch XP history', message: error.message });
+    }
+});
+
 module.exports = router;

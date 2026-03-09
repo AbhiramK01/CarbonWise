@@ -237,8 +237,11 @@ router.post('/', authenticateToken, (req, res) => {
             db.prepare('UPDATE users SET streak = ?, last_activity_date = ? WHERE id = ?').run(newStreak, today, req.user.id);
         }
 
-        // Award XP for logging activity
-        awardXP(req.user.id, 10);
+        // Get activity ID before awarding XP
+        const activityId = result.lastInsertRowid;
+
+        // Award XP for logging activity (linked to this activity)
+        const xpResult = awardXP(req.user.id, 10, 'activity', `Logged ${category} activity`, { activityId });
 
         // Check for new badges
         checkBadges(req.user.id);
@@ -247,7 +250,7 @@ router.post('/', authenticateToken, (req, res) => {
         updateGoalProgress(req.user.id, category, calcType, activityValue, emissions);
 
         // Get the newly created activity
-        let activity = db.prepare('SELECT * FROM activities WHERE id = ?').get(result.lastInsertRowid);
+        let activity = db.prepare('SELECT * FROM activities WHERE id = ?').get(activityId);
         
         // Fallback: if not found by id, get the most recent activity for this user
         if (!activity) {
@@ -259,13 +262,19 @@ router.post('/', authenticateToken, (req, res) => {
             ...activity,
             activity_type: activity.description,
             amount: activity.value
-        } : { id: result.lastInsertRowid, category, description: activityDescription, value: activityValue };
+        } : { id: activityId, category, description: activityDescription, value: activityValue };
 
         res.status(201).json({
             message: 'Activity logged successfully',
             activity: responseActivity,
             xpEarned: 10,
-            streak: newStreak
+            streak: newStreak,
+            xpDetails: xpResult ? {
+                newXP: xpResult.newXP,
+                leveledUp: xpResult.leveledUp,
+                newLevel: xpResult.newLevel,
+                levelTitle: xpResult.levelTitle
+            } : null
         });
     } catch (error) {
         console.error('Create activity error:', error);
@@ -380,9 +389,39 @@ router.delete('/:id', authenticateToken, (req, res) => {
             return res.status(404).json({ error: 'Activity not found' });
         }
 
+        // Find and delete linked XP history entry, subtract XP from user
+        const xpEntry = db.prepare('SELECT * FROM xp_history WHERE activity_id = ? AND user_id = ?').get(id, req.user.id);
+        let xpDeducted = 0;
+        let newXP = 0;
+        
+        if (xpEntry) {
+            xpDeducted = xpEntry.amount;
+            // Get current user XP and subtract
+            const user = db.prepare('SELECT xp, level FROM users WHERE id = ?').get(req.user.id);
+            if (user) {
+                newXP = Math.max(0, user.xp - xpDeducted);
+                // Recalculate level based on new XP
+                const LEVEL_THRESHOLDS = [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000];
+                let newLevel = 1;
+                for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+                    if (newXP >= LEVEL_THRESHOLDS[i]) {
+                        newLevel = i + 1;
+                        break;
+                    }
+                }
+                db.prepare('UPDATE users SET xp = ?, level = ? WHERE id = ?').run(newXP, newLevel, req.user.id);
+            }
+            // Delete the XP history entry
+            db.prepare('DELETE FROM xp_history WHERE id = ?').run(xpEntry.id);
+        }
+
         db.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').run(id, req.user.id);
 
-        res.json({ message: 'Activity deleted' });
+        res.json({ 
+            message: 'Activity deleted',
+            xpDeducted,
+            newXP
+        });
     } catch (error) {
         console.error('Delete activity error:', error);
         res.status(500).json({ error: 'Failed to delete activity', message: error.message });

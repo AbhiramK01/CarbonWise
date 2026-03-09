@@ -90,9 +90,12 @@ class DatabaseWrapper {
                         stmt.bind(formattedParams);
                     }
                     stmt.step();
+                    // Get lastInsertRowid IMMEDIATELY after step, before free/save
+                    const lastId = getLastInsertRowId();
+                    const changes = dbWrapper.db.getRowsModified();
                     stmt.free();
                     dbWrapper.save();
-                    return { changes: dbWrapper.db.getRowsModified(), lastInsertRowid: getLastInsertRowId() };
+                    return { changes, lastInsertRowid: lastId };
                 } catch (err) {
                     console.error('DB run error:', err.message, 'SQL:', sql, 'Params:', params);
                     throw err;
@@ -233,6 +236,26 @@ const initPromise = dbWrapper.initialize().then(() => {
         FOREIGN KEY (badge_id) REFERENCES badges(id),
         UNIQUE(user_id, badge_id)
     );
+
+    -- XP History table (track XP gains over time)
+    CREATE TABLE IF NOT EXISTS xp_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        description TEXT,
+        activity_id INTEGER,
+        goal_id INTEGER,
+        badge_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE SET NULL,
+        FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL,
+        FOREIGN KEY (badge_id) REFERENCES badges(id) ON DELETE SET NULL
+    );
+
+    -- Index for xp_history performance
+    CREATE INDEX IF NOT EXISTS idx_xp_history_user ON xp_history(user_id, created_at);
 
     -- Calculator profiles (saved calculations)
     CREATE TABLE IF NOT EXISTS calculator_profiles (

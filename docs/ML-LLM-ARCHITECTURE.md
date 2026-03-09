@@ -409,10 +409,10 @@ The hybrid ML + LLM approach in CarbonWise demonstrates how **combining speciali
 ### Start All Services
 ```bash
 # Terminal 1: Node.js Backend
-cd /path/to/CW1 && node server.js
+cd CarbonWise && node server.js
 
 # Terminal 2: ML Service
-cd /path/to/CW1/ml-service && python app.py
+cd CarbonWise/ml-service && python app.py
 
 # Terminal 3: Ollama (if not running)
 ollama serve

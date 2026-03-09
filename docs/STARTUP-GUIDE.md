@@ -1,6 +1,6 @@
 # CarbonWise Startup Guide
 
-Complete guide to running CarbonWise from scratch.
+Complete guide to running CarbonWise from scratch on **macOS**, **Linux**, and **Windows**.
 
 ---
 
@@ -17,6 +17,7 @@ Complete guide to running CarbonWise from scratch.
 
 ### Verify Installations
 
+**macOS/Linux:**
 ```bash
 node --version    # Should show v18+
 python3 --version # Should show 3.9+
@@ -24,18 +25,29 @@ pip3 --version    # Any recent version
 ollama --version  # Optional
 ```
 
+**Windows (PowerShell):**
+```powershell
+node --version
+python --version
+pip --version
+ollama --version  # Optional
+```
+
 ---
 
 ## First-Time Setup
 
-### Step 1: Clone/Navigate to Project
+### Step 1: Clone the Repository
 
+**macOS/Linux/Windows:**
 ```bash
-cd /Users/abhiramk01/CW1
+git clone https://github.com/AbhiramK01/CarbonWise.git
+cd CarbonWise
 ```
 
 ### Step 2: Install Node.js Dependencies
 
+**All Platforms:**
 ```bash
 npm install
 ```
@@ -50,22 +62,35 @@ This installs:
 
 ### Step 2.5: (Optional) Seed Demo Users
 
+**All Platforms:**
 ```bash
 node seed-users.js
 ```
 
 This creates 5 demo users with activity history for testing:
-- `alex.commuter@demo.com` - High transport emissions
-- `bella.foodie@demo.com` - High diet emissions  
-- `charlie.homebody@demo.com` - High electricity usage
-- `diana.average@demo.com` - Balanced lifestyle
-- `evan.green@demo.com` - Eco-conscious
+
+| Email | Profile | Description |
+|-------|---------|-------------|
+| alex.commuter@demo.com | Commute-heavy | High transport emissions |
+| bella.foodie@demo.com | Diet-heavy | High food/diet emissions |
+| charlie.homebody@demo.com | Energy-heavy | High electricity usage |
+| diana.average@demo.com | Balanced | Typical mixed lifestyle |
+| evan.green@demo.com | Eco-conscious | Low overall footprint |
 
 **All passwords: `demo123`**
 
+> **Note**: Activities are generated from January 1, 2026 to the current date automatically.
+
 ### Step 3: Install Python ML Dependencies
 
+**macOS/Linux:**
 ```bash
+cd ml-service
+pip3 install -r requirements.txt
+```
+
+**Windows:**
+```powershell
 cd ml-service
 pip install -r requirements.txt
 ```
@@ -78,12 +103,19 @@ This installs:
 
 ### Step 4: Generate Training Data
 
+**macOS/Linux:**
 ```bash
+cd ml-service
+python3 generate_data.py
+```
+
+**Windows:**
+```powershell
 cd ml-service
 python generate_data.py
 ```
 
-**Output:**
+**Expected Output:**
 ```
 Generating 10000 synthetic users...
 Dataset saved to data/
@@ -94,11 +126,17 @@ Dataset saved to data/
 
 ### Step 5: Train ML Models
 
+**macOS/Linux:**
 ```bash
+python3 train_models.py
+```
+
+**Windows:**
+```powershell
 python train_models.py
 ```
 
-**Output:**
+**Expected Output:**
 ```
 ==================================================
 CarbonWise ML Model Training
@@ -121,13 +159,21 @@ Detected anomalies
 
 ### Step 6: (Optional) Setup Ollama
 
+**macOS:**
 ```bash
-# Install Ollama (macOS)
 brew install ollama
+ollama pull llama3.2
+```
 
-# Or download from https://ollama.ai
+**Linux:**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2
+```
 
-# Pull a model
+**Windows:**
+Download from https://ollama.ai, then:
+```powershell
 ollama pull llama3.2
 ```
 
@@ -137,53 +183,72 @@ ollama pull llama3.2
 
 ### Option A: Start Services Individually
 
-**Terminal 1 - ML Service:**
+#### Terminal 1 - ML Service
+
+**macOS/Linux:**
 ```bash
-cd /Users/abhiramk01/CW1/ml-service
+cd ml-service
+python3 app.py
+```
+
+**Windows:**
+```powershell
+cd ml-service
 python app.py
 ```
+
 Runs on: http://localhost:5001
 
-**Terminal 2 - Node.js Server:**
+#### Terminal 2 - Node.js Server
+
+**All Platforms:**
 ```bash
-cd /Users/abhiramk01/CW1
+cd ..  # Return to project root if in ml-service
 node server.js
 ```
+
 Runs on: http://localhost:3000
 
-**Terminal 3 - Ollama (Optional):**
+#### Terminal 3 - Ollama (Optional)
+
+**All Platforms:**
 ```bash
 ollama serve
 ```
+
 Runs on: http://localhost:11434
 
 ### Option B: Quick Start (Background Processes)
 
+**macOS/Linux:**
 ```bash
-# Navigate to project
-cd /Users/abhiramk01/CW1
-
-# Start ML service in background
-cd ml-service && python app.py &
-
-# Start Node.js server
-cd /Users/abhiramk01/CW1 && node server.js
+# From project root directory
+cd ml-service && python3 app.py &
+cd .. && node server.js
 ```
 
-### Option C: One-Liner Start
+**Windows (PowerShell - use separate terminals):**
+```powershell
+# Terminal 1
+cd ml-service
+python app.py
+
+# Terminal 2 (new window)
+cd CarbonWise
+node server.js
+```
+
+### Option C: One-Liner Start (macOS/Linux only)
 
 ```bash
-cd /Users/abhiramk01/CW1 && \
-(cd ml-service && python app.py &) && \
-sleep 2 && \
-node server.js
+(cd ml-service && python3 app.py &) && sleep 2 && node server.js
 ```
 
 ---
 
 ## Stopping the Application
 
-### Stop All Services
+### macOS/Linux
 
 ```bash
 # Kill Node.js
@@ -196,7 +261,22 @@ pkill -9 -f "python.*app.py"
 pkill -9 ollama
 ```
 
-### Stop Specific Ports
+### Windows (PowerShell)
+
+```powershell
+# Find and kill processes
+Get-Process node | Stop-Process -Force
+Get-Process python | Stop-Process -Force
+
+# Or kill by port
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+
+netstat -ano | findstr :5001
+taskkill /PID <PID> /F
+```
+
+### Stop Specific Ports (macOS/Linux)
 
 ```bash
 # Kill process on port 3000 (Node.js)
@@ -213,28 +293,43 @@ lsof -ti:11434 | xargs kill -9
 
 ## Restart Commands
 
-### Quick Restart (All Services)
+### Quick Restart - macOS/Linux
 
 ```bash
 # Kill everything and restart
-pkill -9 node; pkill -9 -f "python.*app.py"; sleep 1; \
-cd /Users/abhiramk01/CW1/ml-service && python app.py & \
-sleep 2 && \
-cd /Users/abhiramk01/CW1 && node server.js
+pkill -9 node; pkill -9 -f "python.*app.py"; sleep 1
+cd ml-service && python3 app.py &
+cd .. && node server.js
 ```
 
 ### Restart ML Service Only
 
+**macOS/Linux:**
 ```bash
 lsof -ti:5001 | xargs kill -9 2>/dev/null
-cd /Users/abhiramk01/CW1/ml-service && python app.py &
+cd ml-service && python3 app.py &
+```
+
+**Windows:**
+```powershell
+netstat -ano | findstr :5001
+taskkill /PID <PID> /F
+cd ml-service
+python app.py
 ```
 
 ### Restart Node.js Only
 
+**macOS/Linux:**
 ```bash
 pkill -9 node
-cd /Users/abhiramk01/CW1 && node server.js
+node server.js
+```
+
+**Windows:**
+```powershell
+Get-Process node | Stop-Process -Force
+node server.js
 ```
 
 ---
@@ -243,6 +338,7 @@ cd /Users/abhiramk01/CW1 && node server.js
 
 ### Check All Services
 
+**All Platforms:**
 ```bash
 # Node.js Backend
 curl http://localhost:3000/health
@@ -252,6 +348,12 @@ curl http://localhost:5001/health
 
 # Ollama
 curl http://localhost:11434/api/tags
+```
+
+**Windows (if curl not available):**
+```powershell
+Invoke-WebRequest -Uri http://localhost:3000/health
+Invoke-WebRequest -Uri http://localhost:5001/health
 ```
 
 ### Expected Responses
@@ -281,6 +383,7 @@ curl http://localhost:11434/api/tags
 
 ### Port Already in Use
 
+**macOS/Linux:**
 ```bash
 # Check what's using the port
 lsof -i :3000
@@ -290,41 +393,73 @@ lsof -i :5001
 lsof -ti:3000 | xargs kill -9
 ```
 
+**Windows:**
+```powershell
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+```
+
 ### ML Models Not Found
 
+**macOS/Linux:**
 ```bash
 # Check if models exist
-ls -la /Users/abhiramk01/CW1/ml-service/models/
+ls -la ml-service/models/
 
 # Regenerate if missing
-cd /Users/abhiramk01/CW1/ml-service
+cd ml-service
+python3 generate_data.py
+python3 train_models.py
+```
+
+**Windows:**
+```powershell
+# Check if models exist
+dir ml-service\models\
+
+# Regenerate if missing
+cd ml-service
 python generate_data.py
 python train_models.py
 ```
 
 ### Node.js Module Errors
 
+**All Platforms:**
 ```bash
 # Reinstall dependencies
-cd /Users/abhiramk01/CW1
-rm -rf node_modules
+rm -rf node_modules   # macOS/Linux
+rmdir /s node_modules # Windows
 npm install
 ```
 
 ### Python Import Errors
 
+**macOS/Linux:**
 ```bash
-# Reinstall Python dependencies
-cd /Users/abhiramk01/CW1/ml-service
+cd ml-service
+pip3 install -r requirements.txt --force-reinstall
+```
+
+**Windows:**
+```powershell
+cd ml-service
 pip install -r requirements.txt --force-reinstall
 ```
 
 ### Database Issues
 
+**macOS/Linux:**
 ```bash
 # Delete and recreate database
-rm /Users/abhiramk01/CW1/carbonwise.db
+rm database/carbonwise.db
 # Database auto-creates on server start
+node server.js
+```
+
+**Windows:**
+```powershell
+del database\carbonwise.db
 node server.js
 ```
 
@@ -343,10 +478,14 @@ node server.js
 ## Directory Structure
 
 ```
-/Users/abhiramk01/CW1/
+CarbonWise/
 ├── server.js           # Main entry point
 ├── package.json        # Node.js dependencies
-├── carbonwise.db       # SQLite database (auto-created)
+├── seed-users.js       # Demo user generator
+│
+├── database/           # Database files
+│   ├── db.js           # Database module
+│   └── carbonwise.db   # SQLite database (auto-created)
 │
 ├── public/             # Frontend files
 │   ├── index.html
@@ -382,23 +521,42 @@ node server.js
 ## Quick Reference Card
 
 ### Start Everything
+
+**macOS/Linux:**
 ```bash
-cd /Users/abhiramk01/CW1
-cd ml-service && python app.py &
+cd ml-service && python3 app.py &
 cd .. && node server.js
 ```
 
+**Windows (2 terminals):**
+```powershell
+# Terminal 1
+cd ml-service && python app.py
+
+# Terminal 2
+node server.js
+```
+
 ### Stop Everything
+
+**macOS/Linux:**
 ```bash
 pkill -9 node; pkill -9 -f "python.*app.py"
 ```
 
+**Windows:**
+```powershell
+Get-Process node, python | Stop-Process -Force
+```
+
 ### Check Everything
+
 ```bash
 curl localhost:3000/health && curl localhost:5001/health
 ```
 
 ### Open Application
+
 ```
 http://localhost:3000
 ```
@@ -409,6 +567,7 @@ http://localhost:3000
 
 ### Watch for Changes (Node.js)
 
+**All Platforms:**
 ```bash
 # Install nodemon globally
 npm install -g nodemon
@@ -419,12 +578,16 @@ nodemon server.js
 
 ### Debug Mode
 
+**macOS/Linux:**
 ```bash
-# Node.js with debug output
 DEBUG=* node server.js
+python3 app.py --debug
+```
 
-# Python with verbose output
-python app.py --debug
+**Windows:**
+```powershell
+$env:DEBUG="*"
+node server.js
 ```
 
 ---
@@ -434,9 +597,17 @@ python app.py --debug
 For production deployment, consider:
 
 1. **Environment Variables**
+   
+   **macOS/Linux:**
    ```bash
    export NODE_ENV=production
    export JWT_SECRET=your-secure-secret
+   ```
+   
+   **Windows:**
+   ```powershell
+   $env:NODE_ENV="production"
+   $env:JWT_SECRET="your-secure-secret"
    ```
 
 2. **Process Manager (PM2)**

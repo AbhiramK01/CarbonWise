@@ -166,7 +166,12 @@ function analyzeUserData(userId) {
         WHERE user_id = ? AND date >= ?
     `).all(userId, thisMonthStartStr);
 
-    // Normalize category names (merge similar categories)
+    return analyzeActivitiesData(activities, userId);
+}
+
+// Analyze pre-filtered activities (for date-range reports)
+function analyzeActivitiesData(activities, userId) {
+    const data = {};
     const normalizeCategory = (cat) => {
         const lower = cat.toLowerCase();
         if (lower === 'energy' || lower === 'electricity') return 'electricity';
@@ -324,6 +329,68 @@ function generateInsights(userId) {
     }
 
     // Sort by priority and potential savings
+    insights.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        return b.potentialSavings - a.potentialSavings;
+    });
+
+    return insights;
+}
+
+// Generate insights from pre-filtered activities (for date-range reports)
+function generateInsightsFromActivities(activities, userId) {
+    const userData = analyzeActivitiesData(activities, userId);
+    const insights = [];
+
+    // If no data, return helpful getting-started tips
+    if (!userData.hasAnyData) {
+        return [{
+            id: 'no-data-in-range',
+            title: 'No Data in Selected Range',
+            description: 'No activities found in the selected date range.',
+            category: 'general',
+            potentialSavings: 0,
+            priority: 10
+        }];
+    }
+
+    // Only check templates for categories with data
+    for (const category of Object.keys(INSIGHT_TEMPLATES)) {
+        const categoryDataMap = {
+            'transport': userData.hasTransportData,
+            'electricity': userData.hasElectricityData || userData.hasHeatingData,
+            'diet': userData.hasDietData,
+            'waste': userData.hasWasteData
+        };
+
+        if (!categoryDataMap[category]) continue;
+
+        let categoryInsightAdded = false;
+
+        for (const template of INSIGHT_TEMPLATES[category]) {
+            if (categoryInsightAdded) break;
+            
+            try {
+                if (template.condition(userData)) {
+                    const savings = template.calculateSavings(userData);
+                    if (savings > 0) {
+                        insights.push({
+                            id: template.id,
+                            title: template.title,
+                            description: template.description,
+                            category: template.category,
+                            potentialSavings: Math.round(savings * 10) / 10,
+                            priority: template.priority
+                        });
+                        categoryInsightAdded = true;
+                    }
+                }
+            } catch (e) {
+                // Skip if template evaluation fails
+            }
+        }
+    }
+
     insights.sort((a, b) => {
         if (b.priority !== a.priority) return b.priority - a.priority;
         return b.potentialSavings - a.potentialSavings;
@@ -588,7 +655,9 @@ function getEncouragement(trends) {
 
 module.exports = {
     analyzeUserData,
+    analyzeActivitiesData,
     generateInsights,
+    generateInsightsFromActivities,
     identifyTrends,
     generateAISummary,
     generateAIInsights,

@@ -34,3 +34,10 @@ build/
 
 # Coverage reports
 coverage/
+
+# ML Service
+ml-service/models/*.pkl
+ml-service/data/*.json
+ml-service/data/*.csv
+__pycache__/
+*.pyc

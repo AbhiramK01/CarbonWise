@@ -697,37 +697,69 @@ const EMISSION_FACTORS = {
     }
 };
 
+// Period conversion factors to convert to daily values
+const PERIOD_TO_DAILY = {
+    'daily': 1,
+    'weekly': 1 / 7,
+    'monthly': 1 / 30,
+    'annually': 1 / 365
+};
+
+// Period conversion factors to convert to monthly values (for display)
+const PERIOD_TO_MONTHLY = {
+    'daily': 30,
+    'weekly': 4.33,
+    'monthly': 1,
+    'annually': 1 / 12
+};
+
+// Convert a value from a given period to daily
+function convertToDaily(value, period) {
+    return value * (PERIOD_TO_DAILY[period] || 1);
+}
+
+// Convert a value from a given period to monthly (for display)
+function convertToMonthly(value, period) {
+    return value * (PERIOD_TO_MONTHLY[period] || 1);
+}
+
 // Calculator state - track selected options
 let calculatorState = {
-    transport: { type: null, distance: 0 },
+    transport: { type: null, distance: 0, period: 'weekly' },
     diet: { type: null },
-    electricity: { usage: 0, source: 'mixed' },
+    electricity: { usage: 0, source: 'mixed', period: 'monthly' },
     heating: { type: 'natural-gas', size: 0, hours: 8 },
-    waste: { bags: 0 }
+    waste: { bags: 0, period: 'weekly' }
 };
 
 function initCalculator() {
     // Electricity calculator
     const electricityUsage = document.getElementById('electricity-usage');
     const energySource = document.getElementById('energy-source');
+    const electricityPeriod = document.getElementById('electricity-period');
     
     if (electricityUsage && energySource) {
         const calcElectricity = () => {
             const usage = parseFloat(electricityUsage.value) || 0;
             const source = energySource.value;
-            calculatorState.electricity = { usage, source };
+            const period = electricityPeriod?.value || 'monthly';
+            calculatorState.electricity = { usage, source, period };
             const factor = EMISSION_FACTORS.electricity[source] || 0.48;
-            const result = (usage * factor).toFixed(1);
+            // Convert to monthly for display
+            const monthlyUsage = convertToMonthly(usage, period);
+            const result = (monthlyUsage * factor).toFixed(1);
             document.getElementById('electricity-result').textContent = result;
             updateTotalEmissions();
         };
         electricityUsage.addEventListener('input', calcElectricity);
         energySource.addEventListener('change', calcElectricity);
+        electricityPeriod?.addEventListener('change', calcElectricity);
     }
     
     // Transport calculator - using .transport-card with data-type
     const transportCards = document.querySelectorAll('.transport-card');
     const transportDistance = document.getElementById('transport-distance');
+    const transportPeriod = document.getElementById('transport-period');
     const fuelType = document.getElementById('fuel-type');
     const carOptions = document.getElementById('car-options');
     
@@ -745,8 +777,10 @@ function initCalculator() {
     });
     
     const calcTransport = () => {
-        const distancePerWeek = parseFloat(transportDistance?.value) || 0;
-        calculatorState.transport.distance = distancePerWeek;
+        const distance = parseFloat(transportDistance?.value) || 0;
+        const period = transportPeriod?.value || 'weekly';
+        calculatorState.transport.distance = distance;
+        calculatorState.transport.period = period;
         calculatorState.transport.fuelType = fuelType?.value || 'petrol';
         let factor = 0;
         
@@ -756,14 +790,16 @@ function initCalculator() {
             factor = EMISSION_FACTORS.transport[calculatorState.transport.type] || 0;
         }
         
-        // Convert weekly distance to monthly emissions (4.33 weeks/month)
-        const monthlyResult = (distancePerWeek * 4.33 * factor).toFixed(1);
+        // Convert to monthly for display
+        const monthlyDistance = convertToMonthly(distance, period);
+        const monthlyResult = (monthlyDistance * factor).toFixed(1);
         const resultEl = document.getElementById('transport-result');
         if (resultEl) resultEl.textContent = monthlyResult;
         updateTotalEmissions();
     };
     
     if (transportDistance) transportDistance.addEventListener('input', calcTransport);
+    if (transportPeriod) transportPeriod.addEventListener('change', calcTransport);
     if (fuelType) fuelType.addEventListener('change', calcTransport);
     
     // Heating calculator
@@ -824,10 +860,14 @@ function initCalculator() {
     
     // Waste calculator
     const wasteBags = document.getElementById('waste-bags');
+    const wastePeriod = document.getElementById('waste-period');
     const singleUse = document.getElementById('single-use');
     
     const calcWaste = () => {
-        const bagsPerWeek = parseFloat(wasteBags?.value) || 0;
+        const bags = parseFloat(wasteBags?.value) || 0;
+        const period = wastePeriod?.value || 'weekly';
+        calculatorState.waste = { bags, period };
+        
         let recycleBonus = 0;
         
         if (document.getElementById('recycle-paper')?.checked) recycleBonus += 0.1;
@@ -841,8 +881,9 @@ function initCalculator() {
         if (singleUseVal === 'low') singleUseMultiplier = 0.7;
         else if (singleUseVal === 'minimal') singleUseMultiplier = 0.4;
         
-        // Convert weekly bags to monthly emissions (4.33 weeks/month)
-        const baseMonthly = bagsPerWeek * 4.33 * EMISSION_FACTORS.waste.base_per_bag;
+        // Convert to monthly for display
+        const monthlyBags = convertToMonthly(bags, period);
+        const baseMonthly = monthlyBags * EMISSION_FACTORS.waste.base_per_bag;
         const monthlyResult = (baseMonthly * (1 - recycleBonus) * singleUseMultiplier).toFixed(1);
         
         const resultEl = document.getElementById('waste-result');
@@ -851,6 +892,7 @@ function initCalculator() {
     };
     
     if (wasteBags) wasteBags.addEventListener('input', calcWaste);
+    if (wastePeriod) wastePeriod.addEventListener('change', calcWaste);
     if (singleUse) singleUse.addEventListener('change', calcWaste);
     
     ['recycle-paper', 'recycle-plastic', 'recycle-glass', 'recycle-metal', 'compost'].forEach(id => {
@@ -880,43 +922,39 @@ function updateTotalEmissions() {
     const diet = parseFloat(document.getElementById('diet-result')?.textContent) || 0;
     const waste = parseFloat(document.getElementById('waste-result')?.textContent) || 0;
     
-    // All values are now monthly
+    // All values are now monthly (each input converts to monthly via its own period selector)
     const totalMonthly = electricity + transport + heating + diet + waste;
     
-    const timePeriod = document.getElementById('calc-time-period')?.value || 'monthly';
     const totalEl = document.getElementById('total-emissions');
-    const unitEl = document.getElementById('total-unit');
     const annualEl = document.getElementById('annual-emissions');
+    const periodSelect = document.getElementById('total-period');
+    const selectedPeriod = periodSelect?.value || 'monthly';
     
-    let displayValue, unitText;
-    switch (timePeriod) {
+    // Convert monthly to selected period
+    let displayValue;
+    switch (selectedPeriod) {
         case 'daily':
             displayValue = totalMonthly / 30;
-            unitText = 'kg CO₂/day';
             break;
         case 'weekly':
             displayValue = totalMonthly / 4.33;
-            unitText = 'kg CO₂/week';
             break;
         case 'yearly':
             displayValue = totalMonthly * 12;
-            unitText = 'kg CO₂/year';
             break;
         case 'monthly':
         default:
             displayValue = totalMonthly;
-            unitText = 'kg CO₂/month';
             break;
     }
     
     if (totalEl) totalEl.textContent = displayValue.toFixed(1);
-    if (unitEl) unitEl.textContent = unitText;
     // Annual = monthly * 12 months / 1000 to convert to tons
     if (annualEl) annualEl.textContent = ((totalMonthly * 12) / 1000).toFixed(2);
 }
 
-// Initialize time period selector
-document.getElementById('calc-time-period')?.addEventListener('change', updateTotalEmissions);
+// Initialize total period selector
+document.getElementById('total-period')?.addEventListener('change', updateTotalEmissions);
 
 async function saveCalculation() {
     if (!isLoggedIn()) {
@@ -924,66 +962,126 @@ async function saveCalculation() {
         return;
     }
     
-    const electricity = parseFloat(document.getElementById('electricity-result')?.textContent) || 0;
+    // Get raw input values (not emissions)
+    const electricityUsage = parseFloat(document.getElementById('electricity-usage')?.value) || 0;
+    const electricitySource = document.getElementById('energy-source')?.value || 'mixed';
+    const electricityPeriod = document.getElementById('electricity-period')?.value || 'monthly';
+    const electricityEmissions = parseFloat(document.getElementById('electricity-result')?.textContent) || 0;
+    
+    const transportDistance = calculatorState.transport.distance || 0;
+    const transportPeriod = calculatorState.transport.period || 'weekly';
+    const transportType = calculatorState.transport.type;
+    const transportFuelType = calculatorState.transport.fuelType || 'petrol';
     const transportEmissions = parseFloat(document.getElementById('transport-result')?.textContent) || 0;
-    const heating = parseFloat(document.getElementById('heating-result')?.textContent) || 0;
-    const diet = parseFloat(document.getElementById('diet-result')?.textContent) || 0;
-    const waste = parseFloat(document.getElementById('waste-result')?.textContent) || 0;
+    
+    const homeSize = parseFloat(document.getElementById('home-size')?.value) || 0;
+    const heatingType = document.getElementById('heating-type')?.value || 'natural-gas';
+    const heatingHours = parseFloat(document.getElementById('heating-hours')?.value) || 8;
+    const heatingEmissions = parseFloat(document.getElementById('heating-result')?.textContent) || 0;
+    
+    const dietType = calculatorState.diet.type;
+    const dietEmissions = parseFloat(document.getElementById('diet-result')?.textContent) || 0;
+    
+    const wasteBags = parseFloat(document.getElementById('waste-bags')?.value) || 0;
+    const wastePeriod = document.getElementById('waste-period')?.value || 'weekly';
+    const wasteEmissions = parseFloat(document.getElementById('waste-result')?.textContent) || 0;
+
+    // Get the display period is always monthly now
+    const selectedPeriod = 'monthly';
+    
+    // IMPORTANT: All emissions displayed in calculator are MONTHLY values
+    // We need to convert them to DAILY for consistent storage
+    const convertMonthlyToDaily = (monthlyEmissions) => {
+        return monthlyEmissions / 30;
+    };
+    
+    // Format period for display
+    const periodLabels = {
+        'daily': '/day',
+        'weekly': '/week',
+        'monthly': '/month',
+        'annually': '/year'
+    };
     
     const activities = [];
     
-    // Electricity - save if there's usage
-    if (calculatorState.electricity.usage > 0) {
+    // Electricity - store daily emissions
+    if (electricityUsage > 0) {
+        const dailyEmissions = convertMonthlyToDaily(electricityEmissions);
         activities.push({ 
             category: 'energy', 
-            activity_type: 'electricity', 
-            amount: electricity, 
-            unit: 'kg',
-            subType: calculatorState.electricity.source
+            activity_type: 'electricity',
+            description: `Electricity - ${electricityUsage} kWh${periodLabels[electricityPeriod]}`,
+            amount: electricityUsage,
+            unit: 'kWh',
+            emissions: dailyEmissions,
+            subType: electricitySource,
+            inputPeriod: electricityPeriod
         });
     }
     
-    // Transport - save if distance entered, even if emissions are 0 (bike/walk)
-    if (calculatorState.transport.distance > 0 && calculatorState.transport.type) {
+    // Transport - store daily emissions
+    if (transportDistance > 0 && transportType) {
+        const dailyEmissions = convertMonthlyToDaily(transportEmissions);
+        const dailyDistance = convertToDaily(transportDistance, transportPeriod);
+        
         activities.push({ 
             category: 'transport', 
-            activity_type: calculatorState.transport.type, // 'car', 'bike', 'walk', etc.
-            description: `${calculatorState.transport.type} - ${calculatorState.transport.distance} km`,
-            amount: calculatorState.transport.distance, // Distance in km
+            activity_type: transportType,
+            description: `${formatActivityType(transportType)} - ${transportDistance} km${periodLabels[transportPeriod]}`,
+            amount: dailyDistance,
             unit: 'km',
-            subType: calculatorState.transport.type,
-            fuelType: calculatorState.transport.fuelType
+            emissions: dailyEmissions,
+            subType: transportType,
+            fuelType: transportFuelType,
+            inputPeriod: transportPeriod
         });
     }
     
-    // Heating - save if there's usage
-    if (heating > 0) {
+    // Heating - store daily emissions
+    if (homeSize > 0) {
+        const dailyEmissions = convertMonthlyToDaily(heatingEmissions);
         activities.push({ 
             category: 'energy', 
-            activity_type: 'heating', 
-            amount: heating, 
-            unit: 'kg' 
+            activity_type: 'heating',
+            description: `Heating (${heatingType}) - ${homeSize} sqft`,
+            amount: homeSize,
+            unit: 'sqft',
+            emissions: dailyEmissions,
+            subType: heatingType,
+            heatingHours: heatingHours,
+            inputPeriod: 'daily'
         });
     }
     
-    // Diet - save if a diet type was selected
-    if (calculatorState.diet.type) {
+    // Diet - store daily emissions (already per day in calculator logic)
+    if (dietType) {
+        const dailyEmissions = convertMonthlyToDaily(dietEmissions);
         activities.push({ 
             category: 'food', 
-            activity_type: calculatorState.diet.type, // 'vegan', 'vegetarian', etc.
-            amount: diet, 
-            unit: 'kg',
-            subType: calculatorState.diet.type
+            activity_type: dietType,
+            description: `Diet - ${formatActivityType(dietType)}`,
+            amount: 1,
+            unit: 'day',
+            emissions: dailyEmissions,
+            subType: dietType,
+            inputPeriod: 'daily'
         });
     }
     
-    // Waste - save if there's waste
-    if (waste > 0) {
+    // Waste - store daily emissions
+    if (wasteBags > 0) {
+        const dailyEmissions = convertMonthlyToDaily(wasteEmissions);
+        const dailyBags = convertToDaily(wasteBags, wastePeriod);
+        
         activities.push({ 
             category: 'waste', 
-            activity_type: 'household_waste', 
-            amount: waste, 
-            unit: 'kg' 
+            activity_type: 'household_waste',
+            description: `Waste - ${wasteBags} bags${periodLabels[wastePeriod]}`,
+            amount: dailyBags,
+            unit: 'bags',
+            emissions: dailyEmissions,
+            inputPeriod: wastePeriod
         });
     }
     
@@ -991,6 +1089,11 @@ async function saveCalculation() {
         showToast('Please enter some data first', 'warning');
         return;
     }
+    
+    // Add today's local date to all activities
+    const today = new Date();
+    const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    activities.forEach(a => a.date = localDate);
     
     try {
         let totalXP = 0;
@@ -1004,8 +1107,8 @@ async function saveCalculation() {
         
         showToast(`Saved! +${totalXP} XP earned`, 'success');
         loadDashboard();
-        loadGoals(); // Refresh goals to show updated progress
-        resetCalculator(); // Reset all inputs after save
+        loadGoals();
+        resetCalculator();
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -1164,21 +1267,29 @@ function renderActivityList(activities) {
         return;
     }
     
-    container.innerHTML = activities.map(a => `
+    container.innerHTML = activities.map(a => {
+        // Format timestamp
+        const timestamp = a.created_at ? formatTimestamp(a.created_at) : '';
+        // Format the display value - use description if it has details, otherwise construct from activity_type
+        const displayTitle = a.description || formatActivityType(a.activity_type);
+        const displayAmount = formatActivityAmount(a.amount, a.unit, a.activity_type);
+        
+        return `
         <div class="activity-item" data-id="${a.id}">
             <div class="activity-icon ${a.category}">
                 <i class="fas ${getCategoryIcon(a.category)}"></i>
             </div>
             <div class="activity-details">
-                <h4>${formatActivityType(a.activity_type)}</h4>
-                <p>${a.amount} ${a.unit}</p>
+                <h4>${displayTitle}</h4>
+                <p>${displayAmount}</p>
+                ${timestamp ? `<span class="activity-timestamp"><i class="fas fa-clock"></i> ${timestamp}</span>` : ''}
             </div>
             <div class="activity-emissions">
                 <span class="emissions-value">${convertEmissions(a.emissions)}</span>
-                <span class="emissions-unit">${getEmissionUnit()} CO₂</span>
+                <span class="emissions-unit">${getEmissionUnit()} CO₂/day</span>
             </div>
             <div class="activity-actions">
-                <button class="edit-btn" onclick="editActivity(${a.id}, '${a.category}', '${(a.activity_type || '').replace(/'/g, "\\'")}', ${a.amount}, '${a.unit}', '${a.date}')">
+                <button class="edit-btn" onclick="editActivity(${a.id}, '${a.category}', '${(a.description || a.activity_type || '').replace(/'/g, "\\'")}', ${a.amount || a.value}, '${a.unit}', '${a.date}')">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="delete-btn" onclick="deleteActivity(${a.id})">
@@ -1186,7 +1297,45 @@ function renderActivityList(activities) {
                 </button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
+}
+
+// Format timestamp for display - shows actual date and time
+function formatTimestamp(timestamp) {
+    if (!timestamp) return '';
+    try {
+        const date = new Date(timestamp);
+        // Check if timestamp is in UTC and needs timezone adjustment
+        // SQLite stores CURRENT_TIMESTAMP in UTC
+        
+        // Format: "Mar 9, 2026 at 2:30 PM"
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[date.getMonth()];
+        const day = date.getDate();
+        const year = date.getFullYear();
+        let hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        
+        return `${month} ${day}, ${year} at ${hours}:${minutes} ${ampm}`;
+    } catch (e) {
+        return '';
+    }
+}
+
+// Format activity amount for display
+function formatActivityAmount(amount, unit, activityType) {
+    if (!amount && amount !== 0) return '';
+    
+    // For diet activities, don't show "1 day" - just show the diet type
+    if (unit === 'day' && amount === 1) {
+        return 'Daily diet';
+    }
+    
+    // Round to 1 decimal place for cleaner display
+    const formattedAmount = Number.isInteger(amount) ? amount : parseFloat(amount).toFixed(1);
+    return `${formattedAmount} ${unit}`;
 }
 
 function updateLogSummary(activities) {
@@ -1200,6 +1349,109 @@ function updateLogSummary(activities) {
     }
 }
 
+// Show/hide dynamic options based on category selection
+function updateActivityModalOptions() {
+    const category = document.getElementById('activity-category').value;
+    
+    // Hide all dynamic options
+    document.querySelectorAll('.dynamic-options').forEach(el => el.style.display = 'none');
+    
+    // Show relevant options
+    if (category === 'transport') {
+        document.getElementById('activity-transport-options').style.display = 'block';
+        updateTransportOptions();
+    } else if (category === 'energy') {
+        document.getElementById('activity-energy-options').style.display = 'block';
+        updateEnergyOptions();
+    } else if (category === 'food') {
+        document.getElementById('activity-diet-options').style.display = 'block';
+    } else if (category === 'waste') {
+        document.getElementById('activity-waste-options').style.display = 'block';
+    }
+}
+
+// Show/hide fuel type based on transport selection
+function updateTransportOptions() {
+    const transportType = document.getElementById('activity-transport-type').value;
+    const fuelOptions = document.getElementById('activity-fuel-options');
+    if (fuelOptions) {
+        fuelOptions.style.display = transportType === 'car' ? 'block' : 'none';
+    }
+}
+
+// Show/hide energy source based on energy type selection
+function updateEnergyOptions() {
+    const energyType = document.getElementById('activity-energy-type').value;
+    const elecSourceGroup = document.getElementById('activity-elec-source-group');
+    const heatingSourceGroup = document.getElementById('activity-heating-source-group');
+    const kwhGroup = document.getElementById('activity-kwh-group');
+    const sqftGroup = document.getElementById('activity-sqft-group');
+    
+    if (energyType === 'electricity') {
+        elecSourceGroup.style.display = 'block';
+        heatingSourceGroup.style.display = 'none';
+        kwhGroup.style.display = 'block';
+        sqftGroup.style.display = 'none';
+    } else {
+        elecSourceGroup.style.display = 'none';
+        heatingSourceGroup.style.display = 'block';
+        kwhGroup.style.display = 'none';
+        sqftGroup.style.display = 'block';
+    }
+}
+
+function resetActivityModal() {
+    // Reset category
+    document.getElementById('activity-category').value = '';
+    
+    // Reset transport options
+    const transportType = document.getElementById('activity-transport-type');
+    if (transportType) transportType.value = 'car';
+    const fuelType = document.getElementById('activity-fuel-type');
+    if (fuelType) fuelType.value = 'petrol';
+    const distance = document.getElementById('activity-distance');
+    if (distance) distance.value = '';
+    const transportPeriod = document.getElementById('activity-transport-period');
+    if (transportPeriod) transportPeriod.value = 'weekly';
+    
+    // Reset energy options
+    const energyType = document.getElementById('activity-energy-type');
+    if (energyType) energyType.value = 'electricity';
+    const elecSource = document.getElementById('activity-elec-source');
+    if (elecSource) elecSource.value = 'mixed';
+    const heatingSource = document.getElementById('activity-heating-source');
+    if (heatingSource) heatingSource.value = 'natural-gas';
+    const kwh = document.getElementById('activity-kwh');
+    if (kwh) kwh.value = '';
+    const elecPeriod = document.getElementById('activity-elec-period');
+    if (elecPeriod) elecPeriod.value = 'monthly';
+    const sqft = document.getElementById('activity-sqft');
+    if (sqft) sqft.value = '';
+    
+    // Reset diet options
+    const dietType = document.getElementById('activity-diet-type');
+    if (dietType) dietType.value = 'average';
+    
+    // Reset waste options
+    const wasteBags = document.getElementById('activity-waste-bags');
+    if (wasteBags) wasteBags.value = '';
+    const wastePeriod = document.getElementById('activity-waste-period');
+    if (wastePeriod) wastePeriod.value = 'weekly';
+    
+    // Reset hidden fields
+    document.getElementById('activity-description').value = '';
+    document.getElementById('activity-value').value = '';
+    document.getElementById('activity-unit').value = 'km';
+    
+    // Use local date to avoid timezone issues
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    document.getElementById('activity-date').value = localDate;
+    
+    // Hide all dynamic options
+    document.querySelectorAll('.dynamic-options').forEach(el => el.style.display = 'none');
+}
+
 function openAddActivityModal() {
     if (!isLoggedIn()) {
         openAuthModal('login');
@@ -1210,15 +1462,11 @@ function openAddActivityModal() {
     if (modal) {
         // Reset to add mode
         editingActivityId = null;
-        const title = modal.querySelector('.modal-header h2');
+        const title = modal.querySelector('.modal-header h3');
         if (title) title.textContent = 'Log Activity';
         
-        // Clear form
-        document.getElementById('activity-category').value = '';
-        document.getElementById('activity-description').value = '';
-        document.getElementById('activity-value').value = '';
-        document.getElementById('activity-unit').value = 'kg';
-        document.getElementById('activity-date').value = currentLogDate.toISOString().split('T')[0];
+        // Reset form
+        resetActivityModal();
         
         modal.classList.add('active');
     }
@@ -1229,21 +1477,180 @@ function closeAddActivityModal() {
     if (modal) {
         modal.classList.remove('active');
         editingActivityId = null;
-        const title = modal.querySelector('.modal-header h2');
+        const title = modal.querySelector('.modal-header h3');
         if (title) title.textContent = 'Log Activity';
     }
 }
 
 async function saveActivity() {
     const category = document.getElementById('activity-category').value;
-    const description = document.getElementById('activity-description').value;
-    const value = parseFloat(document.getElementById('activity-value').value);
-    const unit = document.getElementById('activity-unit').value;
     const date = document.getElementById('activity-date').value;
     
-    if (!category || !description || !value) {
-        showToast('Please fill in all fields', 'warning');
+    if (!category) {
+        showToast('Please select a category', 'warning');
         return;
+    }
+    
+    let description = '';
+    let value = 0;
+    let unit = '';
+    let emissions = 0;
+    
+    // Period labels for descriptions
+    const periodLabels = {
+        'daily': '/day',
+        'weekly': '/week',
+        'monthly': '/month',
+        'annually': '/year'
+    };
+    
+    // Get values based on category
+    switch (category) {
+        case 'transport': {
+            const transportType = document.getElementById('activity-transport-type').value;
+            const fuelType = document.getElementById('activity-fuel-type').value;
+            const distance = parseFloat(document.getElementById('activity-distance').value);
+            const period = document.getElementById('activity-transport-period')?.value || 'weekly';
+            
+            if (isNaN(distance) || distance <= 0) {
+                showToast('Please enter a valid distance', 'warning');
+                return;
+            }
+            
+            // Format description like calculator
+            const transportNames = {
+                'car': 'Car', 'bus': 'Bus', 'train': 'Train', 
+                'plane': 'Plane', 'bike': 'Bike', 'walk': 'Walking'
+            };
+            const fuelNames = {
+                'petrol': 'Petrol', 'diesel': 'Diesel', 
+                'hybrid': 'Hybrid', 'electric': 'Electric'
+            };
+            
+            description = transportType === 'car' 
+                ? `${transportNames[transportType]} (${fuelNames[fuelType]}) - ${distance} km${periodLabels[period]}`
+                : `${transportNames[transportType]} - ${distance} km${periodLabels[period]}`;
+            
+            value = distance;
+            unit = 'km';
+            
+            // Calculate emissions - convert to daily
+            const transportFactors = {
+                'car': { 'petrol': 0.21, 'diesel': 0.18, 'hybrid': 0.12, 'electric': 0.05 },
+                'bus': 0.089, 'train': 0.041, 'plane': 0.255, 'bike': 0, 'walk': 0
+            };
+            
+            let factor = transportType === 'car' 
+                ? transportFactors.car[fuelType] || 0.21
+                : transportFactors[transportType] || 0;
+            
+            // Convert to daily emissions
+            const dailyDistance = convertToDaily(distance, period);
+            emissions = dailyDistance * factor;
+            break;
+        }
+        
+        case 'energy': {
+            const energyType = document.getElementById('activity-energy-type').value;
+            
+            if (energyType === 'electricity') {
+                const elecSource = document.getElementById('activity-elec-source').value;
+                const kwh = parseFloat(document.getElementById('activity-kwh').value);
+                const period = document.getElementById('activity-elec-period')?.value || 'monthly';
+                
+                if (isNaN(kwh) || kwh <= 0) {
+                    showToast('Please enter a valid kWh value', 'warning');
+                    return;
+                }
+                
+                const sourceNames = {
+                    'mixed': 'Mixed Grid', 'coal': 'Coal', 'natural-gas': 'Natural Gas',
+                    'nuclear': 'Nuclear', 'renewable': 'Renewable'
+                };
+                
+                description = `Electricity (${sourceNames[elecSource]}) - ${kwh} kWh${periodLabels[period]}`;
+                value = kwh;
+                unit = 'kWh';
+                
+                const elecFactors = {
+                    'mixed': 0.48, 'coal': 0.91, 'natural-gas': 0.42,
+                    'nuclear': 0.012, 'renewable': 0.02
+                };
+                
+                // Convert to daily emissions
+                const dailyKwh = convertToDaily(kwh, period);
+                emissions = dailyKwh * (elecFactors[elecSource] || 0.48);
+            } else {
+                const heatingSource = document.getElementById('activity-heating-source').value;
+                const sqft = parseFloat(document.getElementById('activity-sqft').value);
+                
+                if (isNaN(sqft) || sqft <= 0) {
+                    showToast('Please enter a valid home size', 'warning');
+                    return;
+                }
+                
+                const heatingNames = {
+                    'natural-gas': 'Natural Gas', 'oil': 'Oil', 'electric': 'Electric',
+                    'wood': 'Wood/Biomass', 'heat-pump': 'Heat Pump'
+                };
+                
+                description = `Heating (${heatingNames[heatingSource]}) - ${sqft} sqft`;
+                value = sqft;
+                unit = 'sqft';
+                
+                const heatingFactors = {
+                    'natural-gas': 0.20, 'oil': 0.27, 'electric': 0.12,
+                    'wood': 0.05, 'heat-pump': 0.03
+                };
+                
+                emissions = (sqft / 1000) * (heatingFactors[heatingSource] || 0.20);
+            }
+            break;
+        }
+        
+        case 'food': {
+            const dietType = document.getElementById('activity-diet-type').value;
+            
+            const dietNames = {
+                'meat-heavy': 'Meat Heavy', 'average': 'Average', 'low-meat': 'Low Meat',
+                'vegetarian': 'Vegetarian', 'vegan': 'Vegan'
+            };
+            
+            description = `${dietNames[dietType]} Diet`;
+            value = 1;
+            unit = 'day';
+            
+            const dietFactors = {
+                'meat-heavy': 7.2, 'average': 5.6, 'low-meat': 4.7,
+                'vegetarian': 3.8, 'vegan': 2.9
+            };
+            
+            emissions = dietFactors[dietType] || 5.6; // Daily emissions
+            break;
+        }
+        
+        case 'waste': {
+            const bags = parseFloat(document.getElementById('activity-waste-bags').value);
+            const period = document.getElementById('activity-waste-period')?.value || 'weekly';
+            
+            if (isNaN(bags) || bags < 0) {
+                showToast('Please enter a valid number of bags', 'warning');
+                return;
+            }
+            
+            description = `Waste - ${bags} bags${periodLabels[period]}`;
+            value = bags;
+            unit = 'bags';
+            
+            // Convert to daily emissions
+            const dailyBags = convertToDaily(bags, period);
+            emissions = dailyBags * 2.5;
+            break;
+        }
+        
+        default:
+            showToast('Please select a valid category', 'warning');
+            return;
     }
     
     try {
@@ -1260,13 +1667,14 @@ async function saveActivity() {
                 value,
                 amount: value,
                 unit,
-                date
+                date,
+                emissions
             })
         });
         
         closeAddActivityModal();
         loadActivityLog();
-        loadDashboard(); // Refresh dashboard stats
+        loadDashboard();
         showToast(isEditing ? 'Activity updated!' : 'Activity logged successfully!', 'success');
         editingActivityId = null;
     } catch (error) {
@@ -1289,6 +1697,16 @@ async function deleteActivity(id) {
 
 let editingActivityId = null;
 
+// Helper to parse period from description
+function parsePeriodFromDescription(description) {
+    const desc = description.toLowerCase();
+    if (desc.includes('/day')) return 'daily';
+    if (desc.includes('/week')) return 'weekly';
+    if (desc.includes('/month')) return 'monthly';
+    if (desc.includes('/year')) return 'annually';
+    return 'weekly'; // default
+}
+
 function editActivity(id, category, description, value, unit, date) {
     editingActivityId = id;
     
@@ -1296,15 +1714,84 @@ function editActivity(id, category, description, value, unit, date) {
     if (!modal) return;
     
     // Update modal title
-    const title = modal.querySelector('.modal-header h2');
+    const title = modal.querySelector('.modal-header h3');
     if (title) title.textContent = 'Edit Activity';
     
-    // Populate form fields
+    // Reset form first
+    resetActivityModal();
+    
+    // Set category and trigger options display
     document.getElementById('activity-category').value = category || '';
-    document.getElementById('activity-description').value = description || '';
-    document.getElementById('activity-value').value = value || '';
-    document.getElementById('activity-unit').value = unit || 'kg';
-    document.getElementById('activity-date').value = date || currentLogDate.toISOString().split('T')[0];
+    updateActivityModalOptions();
+    
+    // Parse description to populate specific fields based on category
+    const descLower = (description || '').toLowerCase();
+    const period = parsePeriodFromDescription(description);
+    
+    if (category === 'transport') {
+        // Parse transport type and fuel type from description
+        let transportType = 'car';
+        let fuelType = 'petrol';
+        
+        if (descLower.includes('bus')) transportType = 'bus';
+        else if (descLower.includes('train')) transportType = 'train';
+        else if (descLower.includes('plane')) transportType = 'plane';
+        else if (descLower.includes('bike') || descLower.includes('cycling')) transportType = 'bike';
+        else if (descLower.includes('walk')) transportType = 'walk';
+        
+        if (descLower.includes('diesel')) fuelType = 'diesel';
+        else if (descLower.includes('hybrid')) fuelType = 'hybrid';
+        else if (descLower.includes('electric')) fuelType = 'electric';
+        
+        document.getElementById('activity-transport-type').value = transportType;
+        document.getElementById('activity-fuel-type').value = fuelType;
+        document.getElementById('activity-distance').value = value || '';
+        const periodSelect = document.getElementById('activity-transport-period');
+        if (periodSelect) periodSelect.value = period;
+        updateTransportOptions();
+        
+    } else if (category === 'energy') {
+        if (unit === 'kWh' || descLower.includes('electricity')) {
+            document.getElementById('activity-energy-type').value = 'electricity';
+            document.getElementById('activity-kwh').value = value || '';
+            
+            let elecSource = 'mixed';
+            if (descLower.includes('coal')) elecSource = 'coal';
+            else if (descLower.includes('natural gas') || descLower.includes('natural-gas')) elecSource = 'natural-gas';
+            else if (descLower.includes('nuclear')) elecSource = 'nuclear';
+            else if (descLower.includes('renewable') || descLower.includes('solar') || descLower.includes('wind')) elecSource = 'renewable';
+            document.getElementById('activity-elec-source').value = elecSource;
+            const periodSelect = document.getElementById('activity-elec-period');
+            if (periodSelect) periodSelect.value = period;
+        } else {
+            document.getElementById('activity-energy-type').value = 'heating';
+            document.getElementById('activity-sqft').value = value || '';
+            
+            let heatingSource = 'natural-gas';
+            if (descLower.includes('oil')) heatingSource = 'oil';
+            else if (descLower.includes('electric')) heatingSource = 'electric';
+            else if (descLower.includes('wood') || descLower.includes('biomass')) heatingSource = 'wood';
+            else if (descLower.includes('heat pump') || descLower.includes('heat-pump')) heatingSource = 'heat-pump';
+            document.getElementById('activity-heating-source').value = heatingSource;
+        }
+        updateEnergyOptions();
+        
+    } else if (category === 'food') {
+        let dietType = 'average';
+        if (descLower.includes('meat heavy') || descLower.includes('meat-heavy')) dietType = 'meat-heavy';
+        else if (descLower.includes('low meat') || descLower.includes('low-meat')) dietType = 'low-meat';
+        else if (descLower.includes('vegetarian')) dietType = 'vegetarian';
+        else if (descLower.includes('vegan')) dietType = 'vegan';
+        document.getElementById('activity-diet-type').value = dietType;
+        
+    } else if (category === 'waste') {
+        document.getElementById('activity-waste-bags').value = value || '';
+        const periodSelect = document.getElementById('activity-waste-period');
+        if (periodSelect) periodSelect.value = period;
+    }
+    
+    // Set date
+    document.getElementById('activity-date').value = date || '';
     
     modal.classList.add('active');
 }
@@ -1371,7 +1858,13 @@ async function loadInsights(forceRefresh = false) {
         const url = forceRefresh ? '/insights?refresh=true' : '/insights';
         const data = await apiRequest(url);
         showAILoading(false);
-        renderInsights(data);
+        
+        // Ensure data is valid before rendering
+        if (data && typeof data === 'object') {
+            renderInsights(data);
+        } else {
+            throw new Error('Invalid response from server');
+        }
     } catch (error) {
         console.error('Failed to load insights:', error);
         showAILoading(false);
@@ -1445,23 +1938,25 @@ function renderInsights(data) {
     const maxSavings = Math.max(...allInsights.map(i => i.potentialSavings || 0), 50);
     
     container.innerHTML = allInsights.map((insight, index) => {
+        const category = insight.category || 'general';
+        const title = insight.title || 'Reduce your footprint';
+        const description = insight.description || 'Take action to lower your carbon emissions.';
         const savingsPercent = insight.potentialSavings ? Math.min((insight.potentialSavings / maxSavings) * 100, 100) : 0;
-        const categoryData = data.stats?.breakdown?.find(b => b.category === insight.category);
-        const costSavings = insight.costSavings || (insight.potentialSavings ? Math.round(insight.potentialSavings * 0.1) : 0);
+        const categoryData = data.stats?.breakdown?.find(b => b.category === category);
         const isTopPriority = insight.isTop || index === 0;
         
         return `
-        <div class="insight-card ${insight.category} ${isTopPriority ? 'top-priority' : ''}" data-insight-id="${insight.id || index}">
+        <div class="insight-card ${category} ${isTopPriority ? 'top-priority' : ''}" data-insight-id="${insight.id || index}">
             <div class="insight-header">
                 <div class="insight-icon">
-                    <i class="fas ${getInsightIcon(insight.category)}"></i>
+                    <i class="fas ${getInsightIcon(category)}"></i>
                 </div>
-                <span class="insight-category">${capitalizeFirst(insight.category)}</span>
+                <span class="insight-category">${capitalizeFirst(category)}</span>
                 ${isTopPriority ? '<span class="priority-badge"><i class="fas fa-star"></i> #1 Priority</span>' : ''}
                 ${!isTopPriority && insight.potentialSavings >= 20 ? '<span class="high-impact-badge"><i class="fas fa-bolt"></i> High Impact</span>' : ''}
             </div>
-            <h4>${insight.title}</h4>
-            <p class="insight-description">${insight.description}</p>
+            <h4>${title}</h4>
+            <p class="insight-description">${description}</p>
             
             ${categoryData ? `
             <div class="insight-stats">
@@ -1482,10 +1977,6 @@ function renderInsights(data) {
                         <i class="fas fa-leaf"></i>
                         <span>Save <strong>${insight.potentialSavings} kg</strong> CO₂</span>
                     </div>
-                    <div class="insight-cost-savings">
-                        <i class="fas fa-dollar-sign"></i>
-                        <span>~$${costSavings}/month</span>
-                    </div>
                 </div>
                 <div class="savings-bar">
                     <div class="savings-bar-fill" style="width: ${savingsPercent}%"></div>
@@ -1493,8 +1984,8 @@ function renderInsights(data) {
             ` : ''}
             
             <div class="insight-actions">
-                ${getActionChips(insight.category)}
-                <button class="action-chip goal-chip" onclick='addInsightAsGoal(${JSON.stringify({category: insight.category, title: insight.title, potentialSavings: insight.potentialSavings || 0}).replace(/'/g, "&#39;")})'>
+                ${getActionChips(category)}
+                <button class="action-chip goal-chip" onclick='addInsightAsGoal(${JSON.stringify({category: category, title: title, potentialSavings: insight.potentialSavings || 0}).replace(/'/g, "&#39;")})'>
                     <i class="fas fa-bullseye"></i> Set as Goal
                 </button>
             </div>
@@ -1807,10 +2298,12 @@ function renderTrends(trends) {
 }
 
 function capitalizeFirst(str) {
+    if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function getInsightIcon(category) {
+    if (!category) return 'fa-lightbulb';
     const icons = {
         transport: 'fa-car',
         energy: 'fa-bolt',
@@ -1820,6 +2313,728 @@ function getInsightIcon(category) {
         shopping: 'fa-shopping-bag'
     };
     return icons[category] || 'fa-lightbulb';
+}
+
+// ==================== DETAILED REPORT ====================
+let currentReportData = null;
+
+function openReportModal() {
+    const modal = document.getElementById('report-modal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeReportModal() {
+    const modal = document.getElementById('report-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+async function generateDetailedReport() {
+    if (!isLoggedIn()) {
+        openAuthModal('login');
+        return;
+    }
+    
+    // Get date range
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    
+    const startDate = startDateInput?.value || '';
+    const endDate = endDateInput?.value || '';
+    
+    // Validate dates if provided
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        if (start > end) {
+            alert('Start date must be before end date');
+            return;
+        }
+        
+        const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+        if (daysDiff > 31) {
+            alert('Date range cannot exceed 31 days');
+            return;
+        }
+    }
+    
+    openReportModal();
+    
+    const loadingEl = document.getElementById('report-loading');
+    const contentEl = document.getElementById('report-content');
+    const statusEl = document.getElementById('report-loading-status');
+    
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (contentEl) contentEl.style.display = 'none';
+    
+    const loadingMessages = [
+        'Analyzing your carbon footprint data...',
+        'Calculating category breakdowns...',
+        'Identifying optimization opportunities...',
+        'Generating personalized recommendations...',
+        'Comparing current vs optimized usage...',
+        'Finalizing your detailed report...'
+    ];
+    
+    let messageIndex = 0;
+    const messageInterval = setInterval(() => {
+        if (statusEl && messageIndex < loadingMessages.length) {
+            statusEl.textContent = loadingMessages[messageIndex];
+            messageIndex++;
+        }
+    }, 1500);
+    
+    try {
+        // Build query string with date parameters
+        let url = '/insights/report/detailed';
+        const params = [];
+        if (startDate) params.push(`startDate=${startDate}`);
+        if (endDate) params.push(`endDate=${endDate}`);
+        if (params.length > 0) url += '?' + params.join('&');
+        
+        const data = await apiRequest(url);
+        currentReportData = data;
+        
+        clearInterval(messageInterval);
+        if (statusEl) statusEl.textContent = 'Report ready!';
+        
+        setTimeout(() => {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (contentEl) contentEl.style.display = 'block';
+            renderDetailedReport(data);
+        }, 500);
+        
+    } catch (error) {
+        clearInterval(messageInterval);
+        console.error('Failed to generate report:', error);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (contentEl) {
+            contentEl.style.display = 'block';
+            contentEl.innerHTML = `
+                <div class="report-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Unable to Generate Report</h3>
+                    <p>${error.message || 'Please log some activities first to generate a report.'}</p>
+                    <button class="btn-primary" onclick="closeReportModal()">Close</button>
+                </div>
+            `;
+        }
+    }
+}
+
+function renderDetailedReport(data) {
+    // Set report date
+    const dateEl = document.getElementById('report-date');
+    if (dateEl) {
+        dateEl.textContent = new Date(data.generatedAt).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+    
+    // Render executive summary
+    renderSummarySection(data);
+    
+    // Render ML insights (if available)
+    renderMLInsights(data);
+    
+    // Render comparison chart
+    renderComparisonSection(data);
+    
+    // Render category breakdown
+    renderReportCategories(data);
+    
+    // Render fixes
+    renderFixesSection(data);
+    
+    // Render trends
+    renderTrendsAnalysis(data);
+    
+    // Render action plan
+    renderActionPlan(data);
+}
+
+function renderMLInsights(data) {
+    const section = document.getElementById('ml-insights-section');
+    const content = document.getElementById('ml-insights-content');
+    
+    if (!section || !content) return;
+    
+    const ml = data.mlAnalysis;
+    
+    // Hide section if ML not available
+    if (!ml || !ml.available) {
+        section.style.display = 'none';
+        return;
+    }
+    
+    section.style.display = 'block';
+    
+    // Build ML insights display
+    let html = '<div class="ml-insights-grid">';
+    
+    // User Profile Classification
+    if (ml.userProfile) {
+        const clusterName = ml.userProfile.cluster || 'balanced';
+        const clusterDisplay = clusterName.replace('_', '-').split('-').map(w => 
+            w.charAt(0).toUpperCase() + w.slice(1)
+        ).join(' ');
+        const confidence = (ml.userProfile.confidence * 100).toFixed(0);
+        
+        html += `
+            <div class="ml-card profile-card">
+                <div class="ml-card-icon"><i class="fas fa-user-tag"></i></div>
+                <div class="ml-card-content">
+                    <h4>Your Profile</h4>
+                    <p class="ml-value">${clusterDisplay}</p>
+                    <p class="ml-confidence">Confidence: ${confidence}%</p>
+                    <p class="ml-description">${ml.userProfile.description || ''}</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Emission Prediction
+    if (ml.prediction) {
+        html += `
+            <div class="ml-card prediction-card">
+                <div class="ml-card-icon"><i class="fas fa-chart-line"></i></div>
+                <div class="ml-card-content">
+                    <h4>AI Predictions</h4>
+                    <table class="ml-prediction-table">
+                        <tr>
+                            <td>Daily</td>
+                            <td class="ml-value">${ml.prediction.daily?.toFixed(1) || '—'} kg</td>
+                        </tr>
+                        <tr>
+                            <td>Weekly</td>
+                            <td class="ml-value">${ml.prediction.weekly?.toFixed(1) || '—'} kg</td>
+                        </tr>
+                        <tr>
+                            <td>Monthly</td>
+                            <td class="ml-value">${ml.prediction.monthly?.toFixed(1) || '—'} kg</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Anomaly Detection
+    if (ml.anomaly) {
+        const anomalyClass = ml.anomaly.isAnomaly ? 'warning' : 'normal';
+        const anomalyIcon = ml.anomaly.isAnomaly ? 'exclamation-triangle' : 'check-circle';
+        const anomalyText = ml.anomaly.isAnomaly ? 'Unusual Pattern Detected' : 'Normal Patterns';
+        
+        html += `
+            <div class="ml-card anomaly-card ${anomalyClass}">
+                <div class="ml-card-icon"><i class="fas fa-${anomalyIcon}"></i></div>
+                <div class="ml-card-content">
+                    <h4>Pattern Analysis</h4>
+                    <p class="ml-value ${anomalyClass}">${anomalyText}</p>
+                    ${ml.anomaly.reason ? `<p class="ml-reason">${ml.anomaly.reason}</p>` : ''}
+                    ${ml.anomaly.recommendation ? `<p class="ml-recommendation">${ml.anomaly.recommendation}</p>` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    
+    // ML Recommendations
+    if (ml.recommendations && ml.recommendations.items && ml.recommendations.items.length > 0) {
+        html += `
+            <div class="ml-recommendations">
+                <h4><i class="fas fa-robot"></i> AI-Powered Recommendations</h4>
+                <p class="ml-potential">Total potential reduction: <strong>${ml.recommendations.totalPotentialReduction || 0}%</strong></p>
+                <div class="ml-rec-list">
+        `;
+        
+        for (const rec of ml.recommendations.items.slice(0, 4)) {
+            const priorityClass = rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low';
+            html += `
+                <div class="ml-rec-item ${priorityClass}">
+                    <div class="ml-rec-action">${rec.action}</div>
+                    <div class="ml-rec-meta">
+                        <span class="ml-rec-reduction">−${rec.potential_reduction}</span>
+                        <span class="ml-rec-priority priority-${priorityClass}">${rec.priority}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += '</div></div>';
+    }
+    
+    content.innerHTML = html;
+}
+
+function renderSummarySection(data) {
+    const statsEl = document.getElementById('report-summary-stats');
+    const textEl = document.getElementById('report-summary-text');
+    
+    const summary = data.summary;
+    const daysCovered = summary.dateRange?.daysCovered || 0;
+    const vsGlobalClass = summary.vsGlobalPercent > 0 ? 'negative' : 'positive';
+    const vsGlobalText = summary.vsGlobalPercent > 0 ? 'above' : 'below';
+    const trendText = summary.trendDirection === 'improving' ? '↓ Improving' : 
+                      summary.trendDirection === 'worsening' ? '↑ Worsening' : '— Stable';
+    const trendClass = summary.trendDirection === 'improving' ? 'positive' : 
+                       summary.trendDirection === 'worsening' ? 'negative' : 'neutral';
+    
+    // Format date range
+    const startDate = summary.dateRange?.start ? new Date(summary.dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+    const endDate = summary.dateRange?.end ? new Date(summary.dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <table class="summary-table">
+                <tbody>
+                    <tr>
+                        <td class="label">Tracking Period</td>
+                        <td class="value">${startDate} — ${endDate}</td>
+                        <td class="label">Days Tracked</td>
+                        <td class="value">${daysCovered}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Activities Logged</td>
+                        <td class="value">${summary.totalActivities}</td>
+                        <td class="label">Total Emissions</td>
+                        <td class="value highlight">${summary.totalEmissions.toFixed(1)} kg CO₂</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Daily Average</td>
+                        <td class="value">${summary.dailyAverage.toFixed(1)} kg/day</td>
+                        <td class="label">Monthly Projection</td>
+                        <td class="value">${summary.monthlyProjection.toFixed(1)} kg/month</td>
+                    </tr>
+                    <tr>
+                        <td class="label">vs Global Average</td>
+                        <td class="value ${vsGlobalClass}">${Math.abs(summary.vsGlobalPercent)}% ${vsGlobalText}</td>
+                        <td class="label">Trend</td>
+                        <td class="value ${trendClass}">${trendText}</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+    }
+    
+    if (textEl) {
+        const fallbackSummary = `Based on ${daysCovered} days of tracking (${summary.totalActivities} activities), your emissions total ${summary.totalEmissions.toFixed(1)} kg CO₂. ` +
+            `Daily average: ${summary.dailyAverage.toFixed(1)} kg (${Math.abs(summary.vsGlobalPercent)}% ${vsGlobalText} global average). ` +
+            `Trend: ${summary.trendDirection}.`;
+        
+        const aiSummary = data.aiAnalysis?.executiveSummary || fallbackSummary;
+        
+        textEl.innerHTML = `<p class="executive-text">${aiSummary}</p>`;
+    }
+}
+
+function renderComparisonSection(data) {
+    const chartEl = document.getElementById('comparison-chart');
+    const detailsEl = document.getElementById('comparison-details');
+    
+    const current = data.comparison.current;
+    const optimized = data.comparison.optimized;
+    const savings = data.comparison.savings;
+    
+    // Calculate percentages for visual bars
+    const maxValue = Math.max(current.monthly, 100);
+    const currentWidth = Math.min((current.monthly / maxValue) * 100, 100);
+    const optimizedWidth = Math.min((optimized.monthly / maxValue) * 100, 100);
+    
+    if (chartEl) {
+        chartEl.innerHTML = `
+            <div class="comparison-visual">
+                <div class="comparison-row">
+                    <span class="comparison-label">Current</span>
+                    <div class="comparison-bar-track">
+                        <div class="comparison-bar-fill current" style="width: ${currentWidth}%"></div>
+                    </div>
+                    <span class="comparison-value">${current.monthly.toFixed(0)} kg</span>
+                </div>
+                <div class="comparison-row">
+                    <span class="comparison-label">Optimized</span>
+                    <div class="comparison-bar-track">
+                        <div class="comparison-bar-fill optimized" style="width: ${optimizedWidth}%"></div>
+                    </div>
+                    <span class="comparison-value">${optimized.monthly.toFixed(0)} kg</span>
+                </div>
+                <div class="savings-summary">
+                    Potential reduction: <strong>${savings.monthly.toFixed(0)} kg/month</strong> (${savings.percent}%)
+                </div>
+            </div>
+        `;
+    }
+    
+    if (detailsEl) {
+        detailsEl.innerHTML = `
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Current</th>
+                        <th>After Optimization</th>
+                        <th>Savings</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Monthly Emissions</td>
+                        <td>${current.monthly.toFixed(1)} kg CO₂</td>
+                        <td>${optimized.monthly.toFixed(1)} kg CO₂</td>
+                        <td class="positive">−${savings.monthly.toFixed(1)} kg</td>
+                    </tr>
+                    <tr>
+                        <td>Yearly Emissions</td>
+                        <td>${current.yearly.toFixed(2)} tons CO₂</td>
+                        <td>${optimized.yearly.toFixed(2)} tons CO₂</td>
+                        <td class="positive">−${savings.yearly.toFixed(2)} tons</td>
+                    </tr>
+                    <tr class="highlight-row">
+                        <td>Reduction</td>
+                        <td colspan="2" style="text-align: center;">—</td>
+                        <td class="positive"><strong>${savings.percent}%</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+    }
+}
+
+function renderReportCategories(data) {
+    const container = document.getElementById('category-breakdown-report');
+    if (!container) return;
+    
+    const categories = data.categoryBreakdown;
+    
+    if (!categories || categories.length === 0) {
+        container.innerHTML = '<p class="empty-state">No category data available.</p>';
+        return;
+    }
+    
+    // Build category summary table
+    let html = `
+        <table class="category-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Emissions</th>
+                    <th>Share</th>
+                    <th>Activities</th>
+                    <th>Avg/Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${categories.map(cat => `
+                    <tr>
+                        <td><strong>${capitalizeFirst(cat.category || 'Other')}</strong></td>
+                        <td>${cat.emissions.toFixed(1)} kg</td>
+                        <td>${cat.percentage}%</td>
+                        <td>${cat.activitiesCount}</td>
+                        <td>${cat.avgPerActivity.toFixed(1)} kg</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    // Add top sources for each category
+    categories.forEach(cat => {
+        if (cat.topActivities && cat.topActivities.length > 0) {
+            html += `
+                <div class="category-sources">
+                    <h4>${capitalizeFirst(cat.category || 'Other')} — Top Sources</h4>
+                    <table class="sources-table">
+                        <tbody>
+                            ${cat.topActivities.slice(0, 5).map((a, idx) => `
+                                <tr>
+                                    <td class="rank">${idx + 1}.</td>
+                                    <td class="desc">${a.description || 'Activity'}</td>
+                                    <td class="emissions">${a.emissions.toFixed(1)} kg</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+    });
+    
+    container.innerHTML = html;
+}
+
+function renderFixesSection(data) {
+    const container = document.getElementById('fixes-list');
+    if (!container) return;
+    
+    const fixes = data.fixes;
+    
+    if (!fixes || fixes.length === 0) {
+        container.innerHTML = '<p class="empty-state">No specific recommendations at this time. Keep up the good work!</p>';
+        return;
+    }
+    
+    // Summary table of all fixes
+    let html = `
+        <table class="fixes-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Recommendation</th>
+                    <th>Category</th>
+                    <th>Potential Savings</th>
+                    <th>Difficulty</th>
+                    <th>Timeframe</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${fixes.map((fix, idx) => `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td><strong>${fix.title || 'Recommendation'}</strong></td>
+                        <td>${capitalizeFirst(fix.category || 'general')}</td>
+                        <td class="positive">−${fix.potentialSavings.toFixed(1)} kg/mo</td>
+                        <td>${fix.feasibility || 'Moderate'}</td>
+                        <td>${fix.timeframe || '—'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    // Detailed breakdown for top fixes
+    html += '<div class="fixes-details">';
+    fixes.slice(0, 5).forEach((fix, idx) => {
+        html += `
+            <div class="fix-detail">
+                <div class="fix-detail-header">
+                    <span class="fix-number">${idx + 1}</span>
+                    <div class="fix-detail-title">
+                        <strong>${fix.title || 'Recommendation'}</strong>
+                        <span class="fix-meta">${capitalizeFirst(fix.category || '')} · ${fix.feasibility || 'Moderate'} · ${fix.timeframe || ''}</span>
+                    </div>
+                    <span class="fix-savings">−${fix.potentialSavings.toFixed(1)} kg/mo (${fix.savingsPercent || 0}%)</span>
+                </div>
+                <p class="fix-description">${fix.description || ''}</p>
+                ${fix.specificActions && fix.specificActions.length > 0 ? `
+                    <div class="fix-steps">
+                        <strong>Steps:</strong>
+                        <ol>
+                            ${fix.specificActions.map(action => `<li>${action}</li>`).join('')}
+                        </ol>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function renderTrendsAnalysis(data) {
+    const container = document.getElementById('trends-analysis');
+    if (!container) return;
+    
+    const trends = data.weeklyTrends;
+    
+    if (!trends || trends.length < 2) {
+        container.innerHTML = '<p class="empty-state">Log activities over multiple weeks to see trend analysis.</p>';
+        return;
+    }
+    
+    const maxEmissions = Math.max(...trends.map(t => t.emissions));
+    const avgEmissions = trends.reduce((sum, t) => sum + t.emissions, 0) / trends.length;
+    const trendDirection = data.summary?.trendDirection || 'stable';
+    
+    // Week-by-week table
+    let html = `
+        <table class="trends-table">
+            <thead>
+                <tr>
+                    <th>Week Starting</th>
+                    <th>Emissions</th>
+                    <th>Change</th>
+                    <th>vs Avg</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${trends.map((t, idx) => {
+                    const weekDate = new Date(t.week);
+                    const weekLabel = weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    const prevEmissions = idx > 0 ? trends[idx - 1].emissions : t.emissions;
+                    const change = t.emissions - prevEmissions;
+                    const changeStr = idx === 0 ? '—' : (change >= 0 ? `+${change.toFixed(1)}` : change.toFixed(1));
+                    const changeClass = idx === 0 ? '' : (change > 0 ? 'negative' : change < 0 ? 'positive' : '');
+                    const vsAvg = t.emissions - avgEmissions;
+                    const vsAvgStr = vsAvg >= 0 ? `+${vsAvg.toFixed(1)}` : vsAvg.toFixed(1);
+                    const vsAvgClass = vsAvg > 0 ? 'negative' : vsAvg < 0 ? 'positive' : '';
+                    
+                    return `
+                        <tr>
+                            <td>${weekLabel}</td>
+                            <td>${t.emissions.toFixed(1)} kg</td>
+                            <td class="${changeClass}">${changeStr} kg</td>
+                            <td class="${vsAvgClass}">${vsAvgStr} kg</td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+        
+        <div class="trends-summary">
+            <table class="summary-mini">
+                <tr>
+                    <td>Trend:</td>
+                    <td class="${trendDirection === 'improving' ? 'positive' : trendDirection === 'worsening' ? 'negative' : ''}">${trendDirection === 'improving' ? '↓ Improving' : trendDirection === 'worsening' ? '↑ Worsening' : '— Stable'}</td>
+                </tr>
+                <tr>
+                    <td>Weeks Analyzed:</td>
+                    <td>${trends.length}</td>
+                </tr>
+                <tr>
+                    <td>Weekly Average:</td>
+                    <td>${avgEmissions.toFixed(1)} kg CO₂</td>
+                </tr>
+                <tr>
+                    <td>Peak Week:</td>
+                    <td>${maxEmissions.toFixed(1)} kg CO₂</td>
+                </tr>
+            </table>
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function renderActionPlan(data) {
+    const container = document.getElementById('action-plan-content');
+    if (!container) return;
+    
+    const fixes = data.fixes || [];
+    const aiPlan = data.aiAnalysis?.actionPlan;
+    const encouragement = data.aiAnalysis?.encouragement;
+    
+    // Group fixes by timeframe
+    const immediate = fixes.filter(f => f.timeframe === 'Immediate');
+    const shortTerm = fixes.filter(f => f.timeframe === '1-3 months');
+    const mediumTerm = fixes.filter(f => f.timeframe === '3-6 months');
+    
+    let html = '';
+    
+    // AI plan if available
+    if (aiPlan && aiPlan.length > 0) {
+        html += `
+            <div class="ai-plan">
+                <strong>AI Recommendations:</strong>
+                <ol>
+                    ${aiPlan.map(item => `<li>${item}</li>`).join('')}
+                </ol>
+            </div>
+        `;
+    }
+    
+    // Action table
+    html += `
+        <table class="action-table">
+            <thead>
+                <tr>
+                    <th>Timeline</th>
+                    <th>Action</th>
+                    <th>Expected Savings</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    // Immediate actions
+    if (immediate.length > 0) {
+        immediate.slice(0, 3).forEach((f, idx) => {
+            html += `
+                <tr${idx === 0 ? ' class="timeline-start"' : ''}>
+                    ${idx === 0 ? `<td rowspan="${immediate.length}" class="timeline-cell immediate">Today</td>` : ''}
+                    <td>${f.title || 'Action'}</td>
+                    <td class="positive">−${f.potentialSavings.toFixed(0)} kg/mo</td>
+                </tr>
+            `;
+        });
+    } else {
+        html += `
+            <tr class="timeline-start">
+                <td class="timeline-cell immediate">Today</td>
+                <td colspan="2" class="muted">No immediate actions needed</td>
+            </tr>
+        `;
+    }
+    
+    // Short-term actions
+    if (shortTerm.length > 0) {
+        shortTerm.slice(0, 3).forEach((f, idx) => {
+            html += `
+                <tr${idx === 0 ? ' class="timeline-start"' : ''}>
+                    ${idx === 0 ? `<td rowspan="${Math.min(shortTerm.length, 3)}" class="timeline-cell short-term">1-3 Months</td>` : ''}
+                    <td>${f.title || 'Action'}</td>
+                    <td class="positive">−${f.potentialSavings.toFixed(0)} kg/mo</td>
+                </tr>
+            `;
+        });
+    } else {
+        html += `
+            <tr class="timeline-start">
+                <td class="timeline-cell short-term">1-3 Months</td>
+                <td colspan="2" class="muted">No short-term actions identified</td>
+            </tr>
+        `;
+    }
+    
+    // Medium-term actions
+    if (mediumTerm.length > 0) {
+        mediumTerm.slice(0, 3).forEach((f, idx) => {
+            html += `
+                <tr${idx === 0 ? ' class="timeline-start"' : ''}>
+                    ${idx === 0 ? `<td rowspan="${Math.min(mediumTerm.length, 3)}" class="timeline-cell medium-term">3-6 Months</td>` : ''}
+                    <td>${f.title || 'Action'}</td>
+                    <td class="positive">−${f.potentialSavings.toFixed(0)} kg/mo</td>
+                </tr>
+            `;
+        });
+    } else {
+        html += `
+            <tr class="timeline-start">
+                <td class="timeline-cell medium-term">3-6 Months</td>
+                <td colspan="2" class="muted">No long-term actions identified</td>
+            </tr>
+        `;
+    }
+    
+    html += `
+            </tbody>
+        </table>
+    `;
+    
+    // Encouragement
+    if (encouragement) {
+        html += `<p class="encouragement">${encouragement}</p>`;
+    } else {
+        html += `<p class="encouragement">Every small change adds up. Start with the easiest fixes and build momentum.</p>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+function printReport() {
+    window.print();
 }
 
 // ==================== GOALS ====================
@@ -2592,6 +3807,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cancel-activity')?.addEventListener('click', closeAddActivityModal);
     document.getElementById('save-activity')?.addEventListener('click', saveActivity);
     
+    // Activity modal dynamic options
+    document.getElementById('activity-category')?.addEventListener('change', updateActivityModalOptions);
+    document.getElementById('activity-transport-type')?.addEventListener('change', updateTransportOptions);
+    document.getElementById('activity-energy-type')?.addEventListener('change', updateEnergyOptions);
+    
     document.getElementById('add-activity-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'add-activity-modal') closeAddActivityModal();
     });
@@ -2637,6 +3857,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chart-prev')?.addEventListener('click', () => navigateChart('prev'));
     document.getElementById('chart-next')?.addEventListener('click', () => navigateChart('next'));
     
+    // Initialize report date pickers with defaults (last 30 days)
+    initReportDatePickers();
+    
     // Initialize calculator
     initCalculator();
     
@@ -2646,3 +3869,52 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load initial dashboard
     loadDashboard();
 });
+
+// Initialize report date pickers
+function initReportDatePickers() {
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    
+    if (!startDateInput || !endDateInput) return;
+    
+    // Set defaults: last 30 days
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    endDateInput.value = today.toISOString().split('T')[0];
+    startDateInput.value = thirtyDaysAgo.toISOString().split('T')[0];
+    
+    // Set max to today
+    endDateInput.max = today.toISOString().split('T')[0];
+    startDateInput.max = today.toISOString().split('T')[0];
+    
+    // Add validation listeners
+    startDateInput.addEventListener('change', () => validateReportDateRange());
+    endDateInput.addEventListener('change', () => validateReportDateRange());
+}
+
+function validateReportDateRange() {
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    const noteEl = document.querySelector('.date-limit-note');
+    
+    if (!startDateInput?.value || !endDateInput?.value) return;
+    
+    const start = new Date(startDateInput.value);
+    const end = new Date(endDateInput.value);
+    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    
+    if (noteEl) {
+        if (daysDiff > 31) {
+            noteEl.textContent = 'Exceeds 31 days!';
+            noteEl.classList.add('error');
+        } else if (daysDiff < 0) {
+            noteEl.textContent = 'Invalid range';
+            noteEl.classList.add('error');
+        } else {
+            noteEl.textContent = `${daysDiff + 1} days selected`;
+            noteEl.classList.remove('error');
+        }
+    }
+}

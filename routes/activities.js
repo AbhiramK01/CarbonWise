@@ -5,41 +5,43 @@ const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
 const { checkBadges, awardXP, updateGoalProgress } = require('../utils/gamification');
 
-// Emission factors (kg CO2 per unit)
+// Emission factors (kg CO2 per unit) - MUST match frontend/app.js
 const EMISSION_FACTORS = {
     electricity: {
-        mixed: 0.5,
-        coal: 0.9,
-        'natural-gas': 0.4,
-        nuclear: 0.02,
-        renewable: 0.05
+        coal: 0.91,
+        'natural-gas': 0.42,
+        mixed: 0.48,
+        renewable: 0.02,
+        nuclear: 0.012
     },
     transport: {
-        car: { petrol: 0.21, diesel: 0.18, hybrid: 0.12, electric: 0.05 },
+        car: { petrol: 0.21, diesel: 0.27, hybrid: 0.12, electric: 0.05 },
         bus: 0.089,
         train: 0.041,
         plane: 0.255,
         bike: 0,
         walk: 0,
         metro: 0.035,
+        motorcycle: 0.103,
         carpool: 0.07
     },
     heating: {
-        'natural-gas': 2.0,
-        oil: 2.5,
-        electric: 1.5,
-        wood: 0.3,
-        'heat-pump': 0.5
+        'natural-gas': 0.20,
+        oil: 0.27,
+        electric: 0.12,
+        'heat-pump': 0.03,
+        wood: 0.05
     },
     diet: {
         'meat-heavy': 7.2,
         average: 5.6,
-        'low-meat': 4.2,
+        'low-meat': 4.7,
+        pescatarian: 3.9,
         vegetarian: 3.8,
         vegan: 2.9
     },
     waste: {
-        perBag: 0.5,
+        perBag: 2.5,
         recyclingReduction: 0.1,
         compostReduction: 0.2
     }
@@ -144,58 +146,77 @@ router.post('/', authenticateToken, (req, res) => {
             value, amount,
             unit, 
             date,
-            subType, fuelType 
+            emissions: providedEmissions,
+            subType, fuelType,
+            inputPeriod
         } = req.body;
 
         const activityDescription = description || activity_type || 'Unknown activity';
         const rawValue = value !== undefined ? value : (amount !== undefined ? amount : null);
         const activityValue = rawValue !== null ? parseFloat(rawValue) : null;
-        const activityDate = date || new Date().toISOString().split('T')[0];
+        // Use local date format (not UTC) for consistency
+        const now = new Date();
+        const localDateDefault = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const activityDate = date || localDateDefault;
         const activityUnit = unit || 'kg';
 
         if (!category || activityValue === null || isNaN(activityValue)) {
             return res.status(400).json({ error: 'Category and value/amount are required' });
         }
 
-        // Calculate emissions
-        let emissions = 0;
+        // Determine activity type for goal tracking
         const calcType = subType || detectActivityType(category, activityDescription);
-        switch (category) {
-            case 'transport':
-                if (calcType === 'car') {
-                    // Car has nested fuel types - default to petrol if not specified
-                    const fuelFactor = EMISSION_FACTORS.transport.car[fuelType] || EMISSION_FACTORS.transport.car.petrol;
-                    emissions = activityValue * fuelFactor;
-                } else if (calcType in EMISSION_FACTORS.transport && typeof EMISSION_FACTORS.transport[calcType] === 'number') {
-                    // Use 'in' operator to check for property existence, not truthiness
-                    // This allows bike/walk with 0 emissions to work correctly
-                    emissions = activityValue * EMISSION_FACTORS.transport[calcType];
-                } else {
-                    emissions = activityValue * 0.21; // Default to car petrol
-                }
-                break;
-            case 'electricity':
-            case 'energy':
-                emissions = activityValue * (EMISSION_FACTORS.electricity[calcType] || 0.5);
-                break;
-            case 'heating':
-                emissions = activityValue * (EMISSION_FACTORS.heating[calcType] || 2.0);
-                break;
-            case 'diet':
-            case 'food':
-                emissions = activityValue * (EMISSION_FACTORS.diet[calcType] || 1.8);
-                break;
-            case 'waste':
-                emissions = activityValue * EMISSION_FACTORS.waste.perBag;
-                break;
-            default:
-                emissions = activityValue * 0.5;
+
+        // Use provided emissions if available (from frontend calculation)
+        // Otherwise calculate emissions from raw values
+        let emissions = 0;
+        
+        if (providedEmissions !== undefined && providedEmissions !== null && !isNaN(parseFloat(providedEmissions))) {
+            emissions = parseFloat(providedEmissions);
+        } else {
+            // Fallback: Calculate emissions if not provided
+            switch (category) {
+                case 'transport':
+                    if (calcType === 'car') {
+                        const fuelFactor = EMISSION_FACTORS.transport.car[fuelType] || EMISSION_FACTORS.transport.car.petrol;
+                        emissions = activityValue * fuelFactor;
+                    } else if (calcType in EMISSION_FACTORS.transport && typeof EMISSION_FACTORS.transport[calcType] === 'number') {
+                        emissions = activityValue * EMISSION_FACTORS.transport[calcType];
+                    } else {
+                        emissions = activityValue * 0.21;
+                    }
+                    break;
+                case 'electricity':
+                case 'energy':
+                    if (activityUnit === 'kWh') {
+                        emissions = activityValue * (EMISSION_FACTORS.electricity[calcType] || 0.5);
+                    } else {
+                        emissions = activityValue; // Already in kg
+                    }
+                    break;
+                case 'heating':
+                    emissions = activityValue * (EMISSION_FACTORS.heating[calcType] || 2.0);
+                    break;
+                case 'diet':
+                case 'food':
+                    // Diet emissions are per day, stored value is for the period
+                    emissions = EMISSION_FACTORS.diet[calcType] || 5.6;
+                    break;
+                case 'waste':
+                    emissions = activityValue * EMISSION_FACTORS.waste.perBag;
+                    break;
+                default:
+                    emissions = activityValue * 0.5;
+            }
         }
 
+        // Use current time in ISO format for proper timezone handling
+        const createdAt = new Date().toISOString();
+
         const result = db.prepare(`
-            INSERT INTO activities (user_id, category, description, value, unit, emissions, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(req.user.id, category, activityDescription, activityValue, activityUnit, emissions, activityDate);
+            INSERT INTO activities (user_id, category, description, value, unit, emissions, date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(req.user.id, category, activityDescription, activityValue, activityUnit, emissions, activityDate, createdAt);
 
         // Update user streak
         const today = new Date().toISOString().split('T')[0];
@@ -256,7 +277,10 @@ router.post('/', authenticateToken, (req, res) => {
 router.put('/:id', authenticateToken, (req, res) => {
     try {
         const { id } = req.params;
-        const { category, description, value, unit, date, subType, fuelType } = req.body;
+        const { 
+            category, description, value, amount, unit, date, 
+            emissions: providedEmissions, subType, fuelType 
+        } = req.body;
 
         // Check ownership
         const activity = db.prepare('SELECT * FROM activities WHERE id = ? AND user_id = ?').get(id, req.user.id);
@@ -264,28 +288,53 @@ router.put('/:id', authenticateToken, (req, res) => {
             return res.status(404).json({ error: 'Activity not found' });
         }
 
-        // Recalculate emissions if value or category changed
-        let emissions = activity.emissions;
-        if (value !== undefined || category || subType) {
-            const cat = category || activity.category;
-            const val = value !== undefined ? value : activity.value;
+        const newValue = value !== undefined ? parseFloat(value) : (amount !== undefined ? parseFloat(amount) : activity.value);
+        const newCategory = category || activity.category;
+        const newUnit = unit || activity.unit;
+        const newDescription = description || activity.description;
+
+        // Use provided emissions if available, otherwise recalculate
+        let emissions;
+        if (providedEmissions !== undefined && providedEmissions !== null && !isNaN(parseFloat(providedEmissions))) {
+            emissions = parseFloat(providedEmissions);
+        } else {
+            // Recalculate emissions based on category, value, and unit
+            const calcType = subType || detectActivityType(newCategory, newDescription);
             
-            switch (cat) {
+            switch (newCategory) {
                 case 'transport':
-                    if (subType === 'car') {
+                    if (calcType === 'car') {
                         const fuelFactor = EMISSION_FACTORS.transport.car[fuelType] || EMISSION_FACTORS.transport.car.petrol;
-                        emissions = val * fuelFactor;
-                    } else if (EMISSION_FACTORS.transport[subType] && typeof EMISSION_FACTORS.transport[subType] === 'number') {
-                        emissions = val * EMISSION_FACTORS.transport[subType];
+                        emissions = newValue * fuelFactor;
+                    } else if (calcType in EMISSION_FACTORS.transport && typeof EMISSION_FACTORS.transport[calcType] === 'number') {
+                        emissions = newValue * EMISSION_FACTORS.transport[calcType];
                     } else {
-                        emissions = val * 0.21;
+                        emissions = newValue * 0.21;
                     }
                     break;
                 case 'electricity':
-                    emissions = val * (EMISSION_FACTORS.electricity[subType] || 0.5);
+                case 'energy':
+                    if (newUnit === 'kWh') {
+                        emissions = newValue * (EMISSION_FACTORS.electricity[calcType] || 0.5);
+                    } else if (newUnit === 'sqft') {
+                        // Heating: (size / 1000) * factor * hours / 8
+                        emissions = (newValue / 1000) * (EMISSION_FACTORS.heating[calcType] || 2.0);
+                    } else {
+                        emissions = newValue; // Already in kg
+                    }
+                    break;
+                case 'diet':
+                case 'food':
+                    // Diet: monthly emissions = daily factor * 30
+                    const dailyFactor = EMISSION_FACTORS.diet[calcType] || 5.6;
+                    emissions = dailyFactor * 30;
+                    break;
+                case 'waste':
+                    // Waste: weekly bags * 4.33 * factor
+                    emissions = newValue * 4.33 * EMISSION_FACTORS.waste.perBag;
                     break;
                 default:
-                    emissions = val * 0.5;
+                    emissions = newValue * 0.5;
             }
         }
 
@@ -298,10 +347,23 @@ router.put('/:id', authenticateToken, (req, res) => {
                 date = COALESCE(?, date),
                 emissions = ?
             WHERE id = ? AND user_id = ?
-        `).run(category, description, value, unit, date, emissions, id, req.user.id);
+        `).run(newCategory !== activity.category ? newCategory : null, 
+               newDescription !== activity.description ? newDescription : null, 
+               newValue !== activity.value ? newValue : null, 
+               newUnit !== activity.unit ? newUnit : null, 
+               date || null, 
+               emissions, id, req.user.id);
 
         const updatedActivity = db.prepare('SELECT * FROM activities WHERE id = ?').get(id);
-        res.json({ message: 'Activity updated', activity: updatedActivity });
+        
+        // Transform for frontend
+        const responseActivity = {
+            ...updatedActivity,
+            activity_type: updatedActivity.description,
+            amount: updatedActivity.value
+        };
+        
+        res.json({ message: 'Activity updated', activity: responseActivity });
     } catch (error) {
         console.error('Update activity error:', error);
         res.status(500).json({ error: 'Failed to update activity', message: error.message });

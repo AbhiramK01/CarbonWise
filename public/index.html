@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarbonWise - Track Your Carbon Footprint</title>
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=14">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -267,8 +267,16 @@
                 <div class="calc-content active" id="calc-electricity">
                     <h3><i class="fas fa-bolt"></i> Electricity Usage</h3>
                     <div class="form-group">
-                        <label for="electricity-usage">Monthly Electricity Usage (kWh)</label>
-                        <input type="number" id="electricity-usage" placeholder="e.g., 300" min="0">
+                        <label for="electricity-usage">Electricity Usage (kWh)</label>
+                        <div class="input-with-period">
+                            <input type="number" id="electricity-usage" placeholder="e.g., 300" min="0">
+                            <select id="electricity-period">
+                                <option value="daily">per Day</option>
+                                <option value="weekly">per Week</option>
+                                <option value="monthly" selected>per Month</option>
+                                <option value="annually">per Year</option>
+                            </select>
+                        </div>
                         <span class="form-hint">Average household uses 300-400 kWh/month</span>
                     </div>
                     <div class="form-group">
@@ -320,8 +328,16 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="transport-distance">Distance (km/week)</label>
-                        <input type="number" id="transport-distance" placeholder="e.g., 50" min="0">
+                        <label for="transport-distance">Distance (km)</label>
+                        <div class="input-with-period">
+                            <input type="number" id="transport-distance" placeholder="e.g., 50" min="0">
+                            <select id="transport-period">
+                                <option value="daily">per Day</option>
+                                <option value="weekly" selected>per Week</option>
+                                <option value="monthly">per Month</option>
+                                <option value="annually">per Year</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group" id="car-options" style="display: none;">
                         <label for="fuel-type">Fuel Type</label>
@@ -429,8 +445,16 @@
                 <div class="calc-content" id="calc-waste">
                     <h3><i class="fas fa-trash"></i> Waste & Recycling</h3>
                     <div class="form-group">
-                        <label for="waste-bags">Waste Bags per Week</label>
-                        <input type="number" id="waste-bags" placeholder="e.g., 2" min="0" max="20">
+                        <label for="waste-bags">Waste Bags</label>
+                        <div class="input-with-period">
+                            <input type="number" id="waste-bags" placeholder="e.g., 2" min="0" max="100">
+                            <select id="waste-period">
+                                <option value="daily">per Day</option>
+                                <option value="weekly" selected>per Week</option>
+                                <option value="monthly">per Month</option>
+                                <option value="annually">per Year</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Recycling Habits</label>
@@ -479,21 +503,16 @@
                 <div class="total-section">
                     <div class="total-display">
                         <h2>Your Total Carbon Footprint</h2>
-                        <div class="time-period-selector">
-                            <label for="calc-time-period">View as:</label>
-                            <select id="calc-time-period">
-                                <option value="daily">Daily</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly" selected>Monthly</option>
-                                <option value="yearly">Yearly</option>
-                            </select>
-                        </div>
                         <div class="total-value">
                             <span id="total-emissions">0</span>
-                            <span class="total-unit" id="total-unit">kg CO₂/month</span>
+                            <span class="total-unit">kg CO₂/</span><select id="total-period" class="total-period-select">
+                                <option value="daily">day</option>
+                                <option value="weekly">week</option>
+                                <option value="monthly" selected>month</option>
+                                <option value="yearly">year</option>
+                            </select>
                         </div>
                         <p class="total-annual">Approximately <span id="annual-emissions">0</span> tons CO₂/year</p>
-                        <p class="time-period-note"><i class="fas fa-info-circle"></i> All inputs are converted to monthly totals, then displayed in your selected time period.</p>
                     </div>
                     <button class="btn-primary" id="save-calculation">
                         <i class="fas fa-save"></i> Save to Activity Log
@@ -556,29 +575,131 @@
                             <label for="activity-category">Category</label>
                             <select id="activity-category">
                                 <option value="">Select category...</option>
-                                <option value="electricity">Electricity</option>
                                 <option value="transport">Transport</option>
-                                <option value="heating">Heating</option>
-                                <option value="diet">Diet</option>
+                                <option value="energy">Energy (Electricity/Heating)</option>
+                                <option value="food">Food/Diet</option>
                                 <option value="waste">Waste</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label for="activity-description">Activity Description</label>
-                            <input type="text" id="activity-description" placeholder="e.g., Drove to work">
+                        
+                        <!-- Transport Options (shown when transport selected) -->
+                        <div id="activity-transport-options" class="dynamic-options" style="display: none;">
+                            <div class="form-group">
+                                <label for="activity-transport-type">Transport Type</label>
+                                <select id="activity-transport-type">
+                                    <option value="car">Car</option>
+                                    <option value="bus">Bus</option>
+                                    <option value="train">Train</option>
+                                    <option value="plane">Plane</option>
+                                    <option value="bike">Bike</option>
+                                    <option value="walk">Walking</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="activity-fuel-options" style="display: none;">
+                                <label for="activity-fuel-type">Fuel Type</label>
+                                <select id="activity-fuel-type">
+                                    <option value="petrol">Petrol</option>
+                                    <option value="diesel">Diesel</option>
+                                    <option value="hybrid">Hybrid</option>
+                                    <option value="electric">Electric</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="activity-distance">Distance (km)</label>
+                                <div class="input-with-period">
+                                    <input type="number" id="activity-distance" placeholder="e.g., 50" min="0" step="any">
+                                    <select id="activity-transport-period">
+                                        <option value="daily">per Day</option>
+                                        <option value="weekly" selected>per Week</option>
+                                        <option value="monthly">per Month</option>
+                                        <option value="annually">per Year</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="activity-value">Value</label>
-                            <div class="input-with-unit">
-                                <input type="number" id="activity-value" placeholder="e.g., 20">
-                                <select id="activity-unit">
-                                    <option value="km">km</option>
-                                    <option value="kWh">kWh</option>
-                                    <option value="hours">hours</option>
-                                    <option value="items">items</option>
+
+                        <!-- Energy Options (shown when energy selected) -->
+                        <div id="activity-energy-options" class="dynamic-options" style="display: none;">
+                            <div class="form-group">
+                                <label for="activity-energy-type">Energy Type</label>
+                                <select id="activity-energy-type">
+                                    <option value="electricity">Electricity</option>
+                                    <option value="heating">Heating</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="activity-elec-source-group">
+                                <label for="activity-elec-source">Electricity Source</label>
+                                <select id="activity-elec-source">
+                                    <option value="mixed">Mixed Grid</option>
+                                    <option value="coal">Coal</option>
+                                    <option value="natural-gas">Natural Gas</option>
+                                    <option value="nuclear">Nuclear</option>
+                                    <option value="renewable">Renewable (Solar/Wind)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="activity-heating-source-group" style="display: none;">
+                                <label for="activity-heating-source">Heating Source</label>
+                                <select id="activity-heating-source">
+                                    <option value="natural-gas">Natural Gas</option>
+                                    <option value="oil">Oil/Kerosene</option>
+                                    <option value="electric">Electric</option>
+                                    <option value="wood">Wood/Biomass</option>
+                                    <option value="heat-pump">Heat Pump</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="activity-kwh-group">
+                                <label for="activity-kwh">Electricity Usage (kWh)</label>
+                                <div class="input-with-period">
+                                    <input type="number" id="activity-kwh" placeholder="e.g., 300" min="0" step="any">
+                                    <select id="activity-elec-period">
+                                        <option value="daily">per Day</option>
+                                        <option value="weekly">per Week</option>
+                                        <option value="monthly" selected>per Month</option>
+                                        <option value="annually">per Year</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" id="activity-sqft-group" style="display: none;">
+                                <label for="activity-sqft">Home Size (sq ft)</label>
+                                <input type="number" id="activity-sqft" placeholder="e.g., 1500" min="0" step="any">
+                            </div>
+                        </div>
+
+                        <!-- Diet Options (shown when food selected) -->
+                        <div id="activity-diet-options" class="dynamic-options" style="display: none;">
+                            <div class="form-group">
+                                <label for="activity-diet-type">Diet Type</label>
+                                <select id="activity-diet-type">
+                                    <option value="meat-heavy">Meat Heavy (daily meat)</option>
+                                    <option value="average">Average (meat few times/week)</option>
+                                    <option value="low-meat">Low Meat (1-2 times/week)</option>
+                                    <option value="vegetarian">Vegetarian</option>
+                                    <option value="vegan">Vegan</option>
                                 </select>
                             </div>
                         </div>
+
+                        <!-- Waste Options (shown when waste selected) -->
+                        <div id="activity-waste-options" class="dynamic-options" style="display: none;">
+                            <div class="form-group">
+                                <label for="activity-waste-bags">Waste Bags</label>
+                                <div class="input-with-period">
+                                    <input type="number" id="activity-waste-bags" placeholder="e.g., 2" min="0" max="100" step="1">
+                                    <select id="activity-waste-period">
+                                        <option value="daily">per Day</option>
+                                        <option value="weekly" selected>per Week</option>
+                                        <option value="monthly">per Month</option>
+                                        <option value="annually">per Year</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hidden fields for backward compatibility -->
+                        <input type="hidden" id="activity-description">
+                        <input type="hidden" id="activity-value">
+                        <input type="hidden" id="activity-unit">
+
                         <div class="form-group">
                             <label for="activity-date">Date</label>
                             <input type="date" id="activity-date">
@@ -597,6 +718,24 @@
             <div class="section-header">
                 <h1>Personalized Insights</h1>
                 <p>AI-powered recommendations to reduce your carbon footprint</p>
+                <div class="report-controls">
+                    <div class="date-range-picker">
+                        <div class="date-input-group">
+                            <label for="report-start-date">From</label>
+                            <input type="date" id="report-start-date">
+                        </div>
+                        <span class="date-separator">to</span>
+                        <div class="date-input-group">
+                            <label for="report-end-date">To</label>
+                            <input type="date" id="report-end-date">
+                        </div>
+                        <span class="date-limit-note">Max 31 days</span>
+                    </div>
+                    <button class="btn-primary generate-report-btn" onclick="generateDetailedReport()">
+                        <i class="fas fa-file-alt"></i> Generate Report
+                    </button>
+                </div>
+            </div>
             </div>
 
             <!-- Statistics Overview -->
@@ -961,12 +1100,94 @@
         </div>
     </div>
 
+    <!-- Detailed Report Modal -->
+    <div class="modal" id="report-modal">
+        <div class="modal-content report-modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-alt"></i> Detailed Carbon Footprint Report</h3>
+                <div class="report-header-actions">
+                    <button class="btn-icon" onclick="printReport()" title="Print Report">
+                        <i class="fas fa-print"></i>
+                    </button>
+                    <button class="modal-close" onclick="closeReportModal()"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="modal-body report-body">
+                <!-- Report Loading State -->
+                <div class="report-loading" id="report-loading">
+                    <div class="ai-spinner">
+                        <div class="spinner-ring"></div>
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h4>Generating Detailed Report...</h4>
+                    <p id="report-loading-status">Analyzing your carbon footprint data</p>
+                    <div class="ai-loading-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+                
+                <!-- Report Content (populated dynamically) -->
+                <div class="report-content" id="report-content" style="display: none;">
+                    <!-- Executive Summary -->
+                    <div class="report-section executive-summary">
+                        <h2><i class="fas fa-clipboard-list"></i> Executive Summary</h2>
+                        <div class="summary-stats" id="report-summary-stats"></div>
+                        <div class="summary-text" id="report-summary-text"></div>
+                    </div>
+
+                    <!-- ML Insights Section -->
+                    <div class="report-section ml-insights-section" id="ml-insights-section" style="display: none;">
+                        <h2><i class="fas fa-brain"></i> Machine Learning Insights</h2>
+                        <div class="ml-insights-content" id="ml-insights-content"></div>
+                    </div>
+
+                    <!-- Current vs Projected Comparison -->
+                    <div class="report-section comparison-section">
+                        <h2><i class="fas fa-balance-scale"></i> Current vs. Optimized Usage</h2>
+                        <div class="comparison-chart" id="comparison-chart"></div>
+                        <div class="comparison-details" id="comparison-details"></div>
+                    </div>
+
+                    <!-- Category Breakdown -->
+                    <div class="report-section category-analysis">
+                        <h2><i class="fas fa-chart-pie"></i> Detailed Category Analysis</h2>
+                        <div class="category-breakdown-report" id="category-breakdown-report"></div>
+                    </div>
+
+                    <!-- Specific Fixes -->
+                    <div class="report-section fixes-section">
+                        <h2><i class="fas fa-tools"></i> Pinpointed Fixes & Recommendations</h2>
+                        <div class="fixes-list" id="fixes-list"></div>
+                    </div>
+
+                    <!-- Historical Trends -->
+                    <div class="report-section trends-section">
+                        <h2><i class="fas fa-chart-line"></i> Historical Trends & Patterns</h2>
+                        <div class="trends-analysis" id="trends-analysis"></div>
+                    </div>
+
+                    <!-- Action Plan -->
+                    <div class="report-section action-plan">
+                        <h2><i class="fas fa-list-check"></i> Prioritized Action Plan</h2>
+                        <div class="action-plan-content" id="action-plan-content"></div>
+                    </div>
+
+                    <!-- Report Footer -->
+                    <div class="report-footer">
+                        <p class="report-generated">Report generated on <span id="report-date"></span></p>
+                        <p class="report-disclaimer">* Projections are based on feasible lifestyle changes. Actual savings may vary.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div class="toast" id="toast">
         <i class="fas fa-check-circle"></i>
         <span id="toast-message">Success!</span>
     </div>
 
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=25"></script>
 </body>
 </html>

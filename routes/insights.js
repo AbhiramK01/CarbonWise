@@ -3,7 +3,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
-const { generateInsights, identifyTrends, generateAISummary, getInsights, generateAIInsights } = require('../utils/insights-engine');
+const { generateInsights, generateInsightsFromActivities, identifyTrends, generateAISummary, getInsights, generateAIInsights } = require('../utils/insights-engine');
+const { isMLServiceAvailable, getFullAnalysis, extractMLFeatures, classifyUser, predictEmissions, detectAnomaly, getRecommendations } = require('../utils/ml-client');
 
 // Get all insights for user (AI-powered with fallback)
 router.get('/', authenticateToken, async (req, res) => {
@@ -372,6 +373,391 @@ function getCategoryTips(category) {
         ]
     };
     return categoryTips[category] || [];
+}
+
+// Generate Detailed Carbon Footprint Report
+router.get('/report/detailed', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { startDate, endDate } = req.query;
+        
+        // Build query with optional date filtering
+        let query = `SELECT * FROM activities WHERE user_id = ?`;
+        const params = [userId];
+        
+        // Add date filters if provided
+        if (startDate) {
+            query += ` AND date >= ?`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND date <= ?`;
+            params.push(endDate);
+        }
+        
+        query += ` ORDER BY date DESC`;
+        
+        // Get filtered activities
+        const allActivities = db.prepare(query).all(...params);
+
+        if (allActivities.length === 0) {
+            const dateRangeMsg = startDate && endDate 
+                ? ` between ${startDate} and ${endDate}` 
+                : startDate ? ` after ${startDate}` 
+                : endDate ? ` before ${endDate}` 
+                : '';
+            return res.status(400).json({ 
+                error: 'Insufficient data', 
+                message: `No activities found${dateRangeMsg}. Please log some activities or adjust your date range.` 
+            });
+        }
+
+        // Get date range
+        const dates = allActivities.map(a => new Date(a.date));
+        const earliestDate = new Date(Math.min(...dates));
+        const latestDate = new Date(Math.max(...dates));
+        const daysCovered = Math.max(1, Math.ceil((latestDate - earliestDate) / (1000 * 60 * 60 * 24)) + 1);
+
+        // Calculate totals by category
+        const categoryTotals = {};
+        const categoryDetails = {};
+        
+        for (const activity of allActivities) {
+            const cat = normalizeCategory(activity.category);
+            if (!categoryTotals[cat]) {
+                categoryTotals[cat] = 0;
+                categoryDetails[cat] = {
+                    activities: [],
+                    totalEmissions: 0,
+                    count: 0,
+                    avgPerActivity: 0
+                };
+            }
+            categoryTotals[cat] += activity.emissions || 0;
+            categoryDetails[cat].totalEmissions += activity.emissions || 0;
+            categoryDetails[cat].count += 1;
+            categoryDetails[cat].activities.push({
+                description: activity.description,
+                amount: activity.amount,
+                emissions: activity.emissions,
+                date: activity.date
+            });
+        }
+
+        // Calculate averages
+        for (const cat in categoryDetails) {
+            categoryDetails[cat].avgPerActivity = categoryDetails[cat].totalEmissions / categoryDetails[cat].count;
+        }
+
+        // Total emissions
+        const totalEmissions = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0);
+        const dailyAverage = totalEmissions / daysCovered;
+        const monthlyProjection = dailyAverage * 30;
+        const yearlyProjection = dailyAverage * 365;
+
+        // Get insights and fixes based on filtered activities
+        const insights = generateInsightsFromActivities(allActivities, userId);
+        
+        // Calculate potential savings per fix
+        const fixes = [];
+        let totalPotentialSavings = 0;
+        
+        for (const insight of insights) {
+            if (insight.potentialSavings && insight.potentialSavings > 0) {
+                const savingsPercent = monthlyProjection > 0 
+                    ? Math.round((insight.potentialSavings / monthlyProjection) * 100) 
+                    : 0;
+                    
+                fixes.push({
+                    category: insight.category,
+                    title: insight.title,
+                    description: insight.description,
+                    currentUsage: categoryTotals[insight.category] || 0,
+                    potentialSavings: insight.potentialSavings,
+                    savingsPercent: savingsPercent,
+                    priority: insight.priority || 5,
+                    feasibility: insight.priority >= 8 ? 'Easy' : insight.priority >= 5 ? 'Moderate' : 'Challenging',
+                    timeframe: insight.priority >= 8 ? 'Immediate' : insight.priority >= 5 ? '1-3 months' : '3-6 months',
+                    specificActions: getSpecificActions(insight.id || insight.title)
+                });
+                totalPotentialSavings += insight.potentialSavings;
+            }
+        }
+
+        // Sort fixes by potential impact
+        fixes.sort((a, b) => b.potentialSavings - a.potentialSavings);
+
+        // Calculate optimized projections
+        const optimizedMonthly = Math.max(0, monthlyProjection - totalPotentialSavings);
+        const optimizedYearly = optimizedMonthly * 12;
+        const reductionPercent = monthlyProjection > 0 
+            ? Math.round(((monthlyProjection - optimizedMonthly) / monthlyProjection) * 100) 
+            : 0;
+
+        // Category breakdown with percentages
+        const categoryBreakdown = Object.entries(categoryTotals).map(([cat, emissions]) => ({
+            category: cat,
+            emissions: parseFloat(emissions.toFixed(2)),
+            percentage: totalEmissions > 0 ? Math.round((emissions / totalEmissions) * 100) : 0,
+            activitiesCount: categoryDetails[cat]?.count || 0,
+            avgPerActivity: parseFloat((categoryDetails[cat]?.avgPerActivity || 0).toFixed(2)),
+            topActivities: (categoryDetails[cat]?.activities || [])
+                .sort((a, b) => (b.emissions || 0) - (a.emissions || 0))
+                .slice(0, 3)
+                .map(a => ({ description: a.description, emissions: parseFloat((a.emissions || 0).toFixed(2)) }))
+        })).sort((a, b) => b.emissions - a.emissions);
+
+        // Weekly trends
+        const weeklyData = {};
+        for (const activity of allActivities) {
+            const date = new Date(activity.date);
+            const weekStart = new Date(date);
+            weekStart.setDate(date.getDate() - date.getDay());
+            const weekKey = weekStart.toISOString().split('T')[0];
+            
+            if (!weeklyData[weekKey]) {
+                weeklyData[weekKey] = 0;
+            }
+            weeklyData[weekKey] += activity.emissions || 0;
+        }
+
+        const weeklyTrends = Object.entries(weeklyData)
+            .sort(([a], [b]) => new Date(a) - new Date(b))
+            .map(([week, emissions]) => ({
+                week,
+                emissions: parseFloat(emissions.toFixed(2))
+            }));
+
+        // Determine trend direction
+        let trendDirection = 'stable';
+        if (weeklyTrends.length >= 2) {
+            const recentWeeks = weeklyTrends.slice(-4);
+            if (recentWeeks.length >= 2) {
+                const firstHalf = recentWeeks.slice(0, Math.ceil(recentWeeks.length / 2));
+                const secondHalf = recentWeeks.slice(Math.ceil(recentWeeks.length / 2));
+                const firstAvg = firstHalf.reduce((sum, w) => sum + w.emissions, 0) / firstHalf.length;
+                const secondAvg = secondHalf.reduce((sum, w) => sum + w.emissions, 0) / secondHalf.length;
+                
+                if (secondAvg < firstAvg * 0.9) trendDirection = 'improving';
+                else if (secondAvg > firstAvg * 1.1) trendDirection = 'worsening';
+            }
+        }
+
+        // Global comparison
+        const globalDailyAvg = 13.15; // 4.8 tons/year
+        const vsGlobalPercent = Math.round(((dailyAverage - globalDailyAvg) / globalDailyAvg) * 100);
+
+        // Generate AI summary if available
+        let aiAnalysis = null;
+        try {
+            const prompt = `Analyze this carbon footprint data and provide a detailed executive summary:
+
+Total Emissions (tracked period): ${totalEmissions.toFixed(2)} kg CO₂
+Daily Average: ${dailyAverage.toFixed(2)} kg CO₂
+Monthly Projection: ${monthlyProjection.toFixed(2)} kg CO₂
+Yearly Projection: ${(yearlyProjection / 1000).toFixed(2)} tons CO₂
+Days Tracked: ${daysCovered}
+Activities Logged: ${allActivities.length}
+
+Category Breakdown:
+${categoryBreakdown.map(c => `- ${c.category}: ${c.emissions} kg (${c.percentage}%)`).join('\n')}
+
+Top Fixes Available:
+${fixes.slice(0, 5).map(f => `- ${f.title}: Could save ${f.potentialSavings} kg CO₂/month`).join('\n')}
+
+Potential Reduction: ${reductionPercent}% (from ${monthlyProjection.toFixed(1)} to ${optimizedMonthly.toFixed(1)} kg/month)
+Trend: ${trendDirection}
+vs Global Average: ${vsGlobalPercent > 0 ? '+' : ''}${vsGlobalPercent}%
+
+Provide:
+1. A 2-3 sentence executive summary of their situation
+2. The single most impactful change they should make
+3. A realistic 3-month action plan (3 bullet points)
+4. An encouraging message based on their progress
+
+Format as JSON with keys: executiveSummary, topPriority, actionPlan (array), encouragement`;
+
+            const aiResponse = await generateAISummary(userId, prompt, true);
+            if (aiResponse && aiResponse.summary) {
+                try {
+                    aiAnalysis = JSON.parse(aiResponse.summary);
+                } catch {
+                    aiAnalysis = { executiveSummary: aiResponse.summary };
+                }
+            }
+        } catch (error) {
+            console.log('AI analysis not available, using algorithmic summary');
+        }
+
+        // ML-powered analysis (if ML service is available)
+        let mlAnalysis = null;
+        try {
+            const mlAvailable = await isMLServiceAvailable();
+            if (mlAvailable) {
+                const mlFeatures = extractMLFeatures(allActivities);
+                if (mlFeatures) {
+                    // Run all ML analyses in parallel
+                    const [classification, prediction, anomaly, recommendations] = await Promise.all([
+                        classifyUser(mlFeatures),
+                        predictEmissions(mlFeatures),
+                        detectAnomaly(mlFeatures),
+                        getRecommendations(mlFeatures)
+                    ]);
+                    
+                    mlAnalysis = {
+                        available: true,
+                        userProfile: classification ? {
+                            cluster: classification.cluster_name,
+                            description: classification.description,
+                            confidence: classification.confidence
+                        } : null,
+                        prediction: prediction ? {
+                            daily: prediction.predicted_daily_emission,
+                            weekly: prediction.predicted_weekly_emission,
+                            monthly: prediction.predicted_monthly_emission,
+                            topFactors: prediction.top_contributing_factors
+                        } : null,
+                        anomaly: anomaly ? {
+                            isAnomaly: anomaly.is_anomaly,
+                            reason: anomaly.reason,
+                            recommendation: anomaly.recommendation
+                        } : null,
+                        recommendations: recommendations ? {
+                            cluster: recommendations.cluster,
+                            items: recommendations.recommendations,
+                            totalPotentialReduction: recommendations.total_potential_reduction
+                        } : null
+                    };
+                }
+            } else {
+                mlAnalysis = { available: false, reason: 'ML service not running' };
+            }
+        } catch (error) {
+            console.log('ML analysis error:', error.message);
+            mlAnalysis = { available: false, reason: error.message };
+        }
+
+        // Build response
+        res.json({
+            success: true,
+            generatedAt: new Date().toISOString(),
+            summary: {
+                dateRange: {
+                    start: earliestDate.toISOString().split('T')[0],
+                    end: latestDate.toISOString().split('T')[0],
+                    daysCovered
+                },
+                totalActivities: allActivities.length,
+                totalEmissions: parseFloat(totalEmissions.toFixed(2)),
+                dailyAverage: parseFloat(dailyAverage.toFixed(2)),
+                monthlyProjection: parseFloat(monthlyProjection.toFixed(2)),
+                yearlyProjection: parseFloat((yearlyProjection / 1000).toFixed(2)), // in tons
+                vsGlobalPercent,
+                trendDirection
+            },
+            comparison: {
+                current: {
+                    monthly: parseFloat(monthlyProjection.toFixed(2)),
+                    yearly: parseFloat((yearlyProjection / 1000).toFixed(2))
+                },
+                optimized: {
+                    monthly: parseFloat(optimizedMonthly.toFixed(2)),
+                    yearly: parseFloat((optimizedYearly / 1000).toFixed(2))
+                },
+                savings: {
+                    monthly: parseFloat(totalPotentialSavings.toFixed(2)),
+                    yearly: parseFloat(((totalPotentialSavings * 12) / 1000).toFixed(2)),
+                    percent: reductionPercent
+                }
+            },
+            categoryBreakdown,
+            fixes,
+            weeklyTrends,
+            aiAnalysis,
+            mlAnalysis
+        });
+
+    } catch (error) {
+        console.error('Detailed report error:', error);
+        res.status(500).json({ error: 'Failed to generate report', message: error.message });
+    }
+});
+
+// Helper to normalize category names
+function normalizeCategory(cat) {
+    const lower = (cat || '').toLowerCase();
+    if (lower === 'energy' || lower === 'electricity') return 'electricity';
+    if (lower === 'food' || lower === 'diet') return 'diet';
+    return lower;
+}
+
+// Helper to get specific actions for fixes
+function getSpecificActions(insightId) {
+    const actions = {
+        'switch-to-public-transit': [
+            'Download local transit app and check your commute route',
+            'Purchase a weekly/monthly transit pass',
+            'Start with 2 days per week using transit',
+            'Use commute time for reading or work'
+        ],
+        'try-cycling': [
+            'Map safe bike routes for trips under 5km',
+            'Consider an e-bike for longer distances',
+            'Keep weather-appropriate gear at work',
+            'Start with one cycling day per week'
+        ],
+        'switch-renewable': [
+            'Compare green energy providers in your area',
+            'Check if your current provider offers a renewable plan',
+            'Most switches take less than 15 minutes online',
+            'Look for solar panel incentives in your region'
+        ],
+        'meatless-days': [
+            'Start with Meatless Mondays',
+            'Find 3-4 vegetarian recipes you enjoy',
+            'Stock up on plant-based protein sources',
+            'Explore vegetarian cuisines (Indian, Mediterranean, Thai)'
+        ],
+        'reduce-flights': [
+            'Use video calls for business meetings when possible',
+            'Choose trains for trips under 500km',
+            'Combine trips to reduce total flights',
+            'Consider carbon offsets for necessary flights'
+        ],
+        'carpooling': [
+            'Ask coworkers about shared commute schedules',
+            'Try carpooling apps in your area',
+            'Set up a rotation with neighbors',
+            'Benefits: shared fuel costs + HOV lane access'
+        ],
+        'reduce-standby': [
+            'Use smart power strips for entertainment centers',
+            'Unplug chargers when not in use',
+            'Enable auto-shutdown on computers',
+            'Estimated savings: 10% of electricity bill'
+        ],
+        'start-composting': [
+            'Get a countertop compost bin',
+            'Learn what can and cannot be composted',
+            'Find a local composting program or start backyard composting',
+            'Reduces methane emissions from landfills'
+        ]
+    };
+    
+    // Check for partial matches
+    const lowerInsightId = (insightId || '').toLowerCase();
+    for (const [key, value] of Object.entries(actions)) {
+        if (lowerInsightId.includes(key.replace(/-/g, ' ')) || key.includes(lowerInsightId.replace(/ /g, '-'))) {
+            return value;
+        }
+    }
+    
+    return [
+        'Review your current habits in this area',
+        'Set a specific, measurable goal',
+        'Track your progress weekly',
+        'Celebrate small wins along the way'
+    ];
 }
 
 module.exports = router;

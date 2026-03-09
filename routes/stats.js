@@ -4,6 +4,12 @@ const router = express.Router();
 const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
 
+// Helper to get local date string (YYYY-MM-DD) instead of UTC
+function toLocalDateString(date) {
+    const d = new Date(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Global averages (kg CO2 per year)
 const GLOBAL_AVERAGES = {
     global: 4800,      // 4.8 tons/year
@@ -23,7 +29,7 @@ const GLOBAL_AVERAGES = {
 router.get('/dashboard', authenticateToken, (req, res) => {
     try {
         const userId = req.user.id;
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalDateString(new Date());
         
         // Calculate date ranges
         // Use calendar week boundaries (Monday-Sunday)
@@ -34,25 +40,25 @@ router.get('/dashboard', authenticateToken, (req, res) => {
         const thisWeekStart = new Date(now);
         thisWeekStart.setDate(now.getDate() - daysFromMonday);
         thisWeekStart.setHours(0, 0, 0, 0);
-        const thisWeekStartStr = thisWeekStart.toISOString().split('T')[0];
+        const thisWeekStartStr = toLocalDateString(thisWeekStart);
         
         const lastWeekStart = new Date(thisWeekStart);
         lastWeekStart.setDate(thisWeekStart.getDate() - 7);
-        const lastWeekStartStr = lastWeekStart.toISOString().split('T')[0];
+        const lastWeekStartStr = toLocalDateString(lastWeekStart);
         
         const lastWeekEnd = new Date(thisWeekStart);
         lastWeekEnd.setDate(thisWeekStart.getDate() - 1); // Sunday of last week
-        const lastWeekEndStr = lastWeekEnd.toISOString().split('T')[0];
+        const lastWeekEndStr = toLocalDateString(lastWeekEnd);
         
         // Use calendar month boundaries instead of rolling 30 days
         const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+        const thisMonthStartStr = toLocalDateString(thisMonthStart);
         
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const lastMonthStartStr = lastMonthStart.toISOString().split('T')[0];
+        const lastMonthStartStr = toLocalDateString(lastMonthStart);
         
         const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
-        const lastMonthEndStr = lastMonthEnd.toISOString().split('T')[0];
+        const lastMonthEndStr = toLocalDateString(lastMonthEnd);
 
         // Today's emissions
         const todayStats = db.prepare(`
@@ -63,7 +69,7 @@ router.get('/dashboard', authenticateToken, (req, res) => {
         // Yesterday's emissions for comparison
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const yesterdayStr = toLocalDateString(yesterday);
         const yesterdayStats = db.prepare(`
             SELECT COALESCE(SUM(emissions), 0) as total
             FROM activities WHERE user_id = ? AND date = ?
@@ -261,8 +267,8 @@ router.get('/charts', authenticateToken, (req, res) => {
                 periodLabel = 'This Week';
         }
 
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        const startDateStr = toLocalDateString(startDate);
+        const endDateStr = toLocalDateString(endDate);
 
         // Get emissions over time
         let emissionsQuery;
@@ -309,7 +315,7 @@ router.get('/charts', authenticateToken, (req, res) => {
             endDateObj.setHours(23, 59, 59, 999);
             
             while (tempDate <= endDateObj) {
-                const key = tempDate.toISOString().split('T')[0];
+                const key = toLocalDateString(tempDate);
                 if (range === 'week') {
                     labels.push(tempDate.toLocaleString('default', { weekday: 'short' }));
                 } else {

@@ -346,14 +346,6 @@ This project is licensed under the **ISC License**.
 
 ---
 
-## 👤 Author
-
-**Abhiram K**
-
-- GitHub: [@AbhiramK01](https://github.com/AbhiramK01)
-
----
-
 <p align="center">
   Made with 💚 for a sustainable future
 </p>

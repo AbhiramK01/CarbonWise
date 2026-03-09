@@ -80,6 +80,28 @@ Open your browser and navigate to:
 http://localhost:3000
 ```
 
+### 6. (Optional) Seed Demo Users
+
+To populate the database with 5 demo users with activity history for testing:
+
+```bash
+node seed-users.js
+```
+
+This creates 5 users with different carbon footprint profiles:
+
+| Email | Profile | Description |
+|-------|---------|-------------|
+| alex.commuter@demo.com | Commute-heavy | High transport emissions |
+| bella.foodie@demo.com | Diet-heavy | High food/diet emissions |
+| charlie.homebody@demo.com | Energy-heavy | High electricity usage |
+| diana.average@demo.com | Balanced | Typical mixed lifestyle |
+| evan.green@demo.com | Eco-conscious | Low overall footprint |
+
+**All demo passwords: `demo123`**
+
+> **Note**: The seed script automatically generates activities from January 1, 2026 up to the current date, so the data will always be recent regardless of when you run it.
+
 ## Project Structure
 
 ```

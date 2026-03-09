@@ -36,6 +36,16 @@ async function apiRequest(endpoint, options = {}) {
     }
 }
 
+// ==================== DATE HELPERS ====================
+// Format date as YYYY-MM-DD in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // ==================== UNIT CONVERSION ====================
 function convertEmissions(valueKg) {
     return parseFloat(valueKg).toFixed(1);
@@ -1204,7 +1214,7 @@ async function loadActivityLog() {
     try {
         let url;
         if (currentPeriod === 'daily') {
-            const dateStr = currentLogDate.toISOString().split('T')[0];
+            const dateStr = formatLocalDate(currentLogDate);
             url = `/activities?date=${dateStr}`;
         } else if (currentPeriod === 'weekly') {
             // Use Monday-Sunday calendar week
@@ -1214,11 +1224,11 @@ async function loadActivityLog() {
             startDate.setDate(startDate.getDate() - daysFromMonday); // Set to Monday
             const endDate = new Date(startDate);
             endDate.setDate(endDate.getDate() + 6); // End of week (Sunday)
-            url = `/activities?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`;
+            url = `/activities?startDate=${formatLocalDate(startDate)}&endDate=${formatLocalDate(endDate)}`;
         } else if (currentPeriod === 'monthly') {
             const startDate = new Date(currentLogDate.getFullYear(), currentLogDate.getMonth(), 1);
             const endDate = new Date(currentLogDate.getFullYear(), currentLogDate.getMonth() + 1, 0);
-            url = `/activities?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`;
+            url = `/activities?startDate=${formatLocalDate(startDate)}&endDate=${formatLocalDate(endDate)}`;
         }
         const data = await apiRequest(url);
         renderActivityList(data.activities || []);
@@ -3960,12 +3970,13 @@ function initReportDatePickers() {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(today.getDate() - 30);
     
-    endDateInput.value = today.toISOString().split('T')[0];
-    startDateInput.value = thirtyDaysAgo.toISOString().split('T')[0];
+    const todayStr = formatLocalDate(today);
+    endDateInput.value = todayStr;
+    startDateInput.value = formatLocalDate(thirtyDaysAgo);
     
     // Set max to today
-    endDateInput.max = today.toISOString().split('T')[0];
-    startDateInput.max = today.toISOString().split('T')[0];
+    endDateInput.max = todayStr;
+    startDateInput.max = todayStr;
     
     // Add validation listeners
     startDateInput.addEventListener('change', () => validateReportDateRange());

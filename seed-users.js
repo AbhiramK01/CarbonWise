@@ -212,7 +212,11 @@ function generateDateRange(startDate, endDate) {
 }
 
 function formatDate(date) {
-    return date.toISOString().split('T')[0];
+    // Format date as YYYY-MM-DD in local timezone (avoids UTC conversion issues)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function generateActivitiesForUser(userId, profile, dates) {

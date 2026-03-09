@@ -9,6 +9,9 @@ A carbon footprint tracking application with ML-powered insights. Track your dai
 - **Goal Setting**: Set and track sustainability goals
 - **Leaderboard**: Compare your progress with other users
 - **Statistics Dashboard**: Visualize your environmental impact over time
+- **Gamification**: Earn XP, level up, and maintain streaks
+- **Dark/Light Theme**: Toggle between dark and light modes
+- **Editable Profile**: Update username and email with uniqueness validation
 
 ## Prerequisites
 
@@ -23,8 +26,8 @@ Before running this application, make sure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/carbonwise.git
-cd carbonwise
+git clone https://github.com/AbhiramK01/CarbonWise.git
+cd CarbonWise
 ```
 
 ### 2. Install Dependencies

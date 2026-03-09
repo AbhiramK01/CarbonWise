@@ -3162,12 +3162,7 @@ function renderGoals(goals) {
                 <div class="goal-card completed" data-id="${goal.id}">
                     <div class="goal-header">
                         <h4><i class="fas fa-check-circle" style="color: var(--success-green);"></i> ${goal.title || goal.type}</h4>
-                        <div class="goal-actions">
-                            <span class="badge success">+${goal.xp_reward || 100} XP</span>
-                            <button class="icon-btn danger" onclick="deleteGoal(${goal.id})" title="Delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
+                        <span class="badge success">+${goal.xp_reward || 100} XP</span>
                     </div>
                     <div class="goal-progress">
                         <div class="progress-bar">
@@ -3184,12 +3179,18 @@ function renderGoals(goals) {
 }
 
 async function deleteGoal(id) {
-    if (!confirm('Delete this goal?')) return;
+    if (!confirm('Delete this goal? This will deduct any XP earned from creating it.')) return;
     
     try {
-        await apiRequest(`/goals/${id}`, { method: 'DELETE' });
+        const result = await apiRequest(`/goals/${id}`, { method: 'DELETE' });
         loadGoals();
-        showToast('Goal deleted', 'success');
+        loadUserProfile(); // Refresh XP display
+        
+        // Show toast with XP deduction info
+        const xpMsg = result.xpDeducted > 0 
+            ? `Goal deleted. -${result.xpDeducted} XP`
+            : 'Goal deleted';
+        showToast(xpMsg, 'success');
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -4106,5 +4107,21 @@ function initXPHistoryListeners() {
     }
 }
 
+function initCompletedGoalsListeners() {
+    const toggleBtn = document.getElementById('toggle-completed-goals');
+    const content = document.getElementById('past-goals-grid');
+    
+    if (toggleBtn && content) {
+        toggleBtn.addEventListener('click', () => {
+            const isVisible = content.style.display !== 'none';
+            content.style.display = isVisible ? 'none' : 'grid';
+            toggleBtn.innerHTML = isVisible 
+                ? '<i class="fas fa-chevron-down"></i> Show'
+                : '<i class="fas fa-chevron-up"></i> Hide';
+        });
+    }
+}
+
 // Initialize XP history listeners on page load
 document.addEventListener('DOMContentLoaded', initXPHistoryListeners);
+document.addEventListener('DOMContentLoaded', initCompletedGoalsListeners);

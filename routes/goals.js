@@ -244,9 +244,45 @@ router.delete('/:id', authenticateToken, (req, res) => {
             return res.status(404).json({ error: 'Goal not found' });
         }
 
+        // Prevent deletion of completed goals
+        if (goal.status === 'completed') {
+            return res.status(400).json({ error: 'Cannot delete completed goals' });
+        }
+
+        // Find all XP entries linked to this goal and deduct XP
+        const xpEntries = db.prepare('SELECT * FROM xp_history WHERE goal_id = ? AND user_id = ?').all(id, req.user.id);
+        let totalXpDeducted = 0;
+        
+        if (xpEntries.length > 0) {
+            // Sum up all XP from this goal
+            totalXpDeducted = xpEntries.reduce((sum, entry) => sum + entry.amount, 0);
+            
+            // Get current user XP and subtract
+            const user = db.prepare('SELECT xp, level FROM users WHERE id = ?').get(req.user.id);
+            if (user) {
+                const newXP = Math.max(0, user.xp - totalXpDeducted);
+                // Recalculate level based on new XP
+                const LEVEL_THRESHOLDS = [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000];
+                let newLevel = 1;
+                for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+                    if (newXP >= LEVEL_THRESHOLDS[i]) {
+                        newLevel = i + 1;
+                        break;
+                    }
+                }
+                db.prepare('UPDATE users SET xp = ?, level = ? WHERE id = ?').run(newXP, newLevel, req.user.id);
+            }
+            
+            // Delete all XP history entries linked to this goal
+            db.prepare('DELETE FROM xp_history WHERE goal_id = ?').run(id);
+        }
+
         db.prepare('DELETE FROM goals WHERE id = ?').run(id);
 
-        res.json({ message: 'Goal deleted' });
+        res.json({ 
+            message: 'Goal deleted',
+            xpDeducted: totalXpDeducted
+        });
     } catch (error) {
         console.error('Delete goal error:', error);
         res.status(500).json({ error: 'Failed to delete goal', message: error.message });

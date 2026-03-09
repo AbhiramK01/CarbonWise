@@ -153,18 +153,28 @@ const INSIGHT_TEMPLATES = {
 };
 
 // Analyze user data and generate insights
-function analyzeUserData(userId) {
+function analyzeUserData(userId, startDate = null, endDate = null) {
     const data = {};
 
-    // Get user's activities from current calendar month
-    const today = new Date();
-    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+    // Get user's activities - use custom date range if provided, otherwise current calendar month
+    let dateFilter;
+    let params = [userId];
+    
+    if (startDate && endDate) {
+        dateFilter = 'date >= ? AND date <= ?';
+        params.push(startDate, endDate);
+    } else {
+        const today = new Date();
+        const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+        dateFilter = 'date >= ?';
+        params.push(thisMonthStartStr);
+    }
 
     const activities = db.prepare(`
         SELECT * FROM activities 
-        WHERE user_id = ? AND date >= ?
-    `).all(userId, thisMonthStartStr);
+        WHERE user_id = ? AND ${dateFilter}
+    `).all(...params);
 
     return analyzeActivitiesData(activities, userId);
 }
@@ -542,7 +552,7 @@ function getUserGoals(userId) {
 }
 
 // Generate AI-powered insights using Ollama
-async function generateAIInsights(userId) {
+async function generateAIInsights(userId, startDate = null, endDate = null) {
     // Check if Ollama is available
     const ollamaAvailable = await ollama.isOllamaAvailable();
     
@@ -551,14 +561,19 @@ async function generateAIInsights(userId) {
         return null;
     }
 
-    // Gather user data
-    const userData = analyzeUserData(userId);
+    // Gather user data with optional date range
+    const userData = analyzeUserData(userId, startDate, endDate);
     const trends = identifyTrends(userId);
     const goals = getUserGoals(userId);
 
     // Add trends and goals to userData for context
     userData.trends = trends;
     userData.goals = goals;
+    
+    // Add date range info for AI context
+    if (startDate && endDate) {
+        userData.dateRange = { startDate, endDate };
+    }
 
     try {
         const aiInsights = await ollama.generateCarbonInsights(userData);
@@ -575,9 +590,11 @@ async function generateAIInsights(userId) {
 }
 
 // Get combined insights (AI + rule-based with caching)
-async function getInsights(userId, forceRefresh = false) {
-    // Check cache first (insights less than 6 hours old)
-    if (!forceRefresh) {
+async function getInsights(userId, forceRefresh = false, startDate = null, endDate = null) {
+    const usingCustomDateRange = startDate && endDate;
+    
+    // Check cache first (only if not using custom date range and insights less than 6 hours old)
+    if (!forceRefresh && !usingCustomDateRange) {
         const cached = db.prepare(`
             SELECT * FROM insights 
             WHERE user_id = ? AND is_dismissed = 0 
@@ -598,25 +615,27 @@ async function getInsights(userId, forceRefresh = false) {
         }
     }
 
-    // Try to generate AI insights
-    let aiInsights = await generateAIInsights(userId);
+    // Try to generate AI insights with optional date range
+    let aiInsights = await generateAIInsights(userId, startDate, endDate);
 
     if (aiInsights) {
-        // Cache AI insights
-        try {
-            // Clear old AI insights
-            db.prepare(`
-                DELETE FROM insights 
-                WHERE user_id = ? AND insight_type = 'ai_generated'
-            `).run(userId);
+        // Only cache AI insights if not using custom date range
+        if (!usingCustomDateRange) {
+            try {
+                // Clear old AI insights
+                db.prepare(`
+                    DELETE FROM insights 
+                    WHERE user_id = ? AND insight_type = 'ai_generated'
+                `).run(userId);
 
-            // Store new AI insights
-            db.prepare(`
-                INSERT INTO insights (user_id, insight_type, category, title, description, priority, created_at)
-                VALUES (?, 'ai_generated', 'all', 'AI Insights', ?, 10, datetime('now'))
-            `).run(userId, JSON.stringify(aiInsights));
-        } catch (e) {
-            console.error('Failed to cache AI insights:', e);
+                // Store new AI insights
+                db.prepare(`
+                    INSERT INTO insights (user_id, insight_type, category, title, description, priority, created_at)
+                    VALUES (?, 'ai_generated', 'all', 'AI Insights', ?, 10, datetime('now'))
+                `).run(userId, JSON.stringify(aiInsights));
+            } catch (e) {
+                console.error('Failed to cache AI insights:', e);
+            }
         }
 
         return aiInsights;

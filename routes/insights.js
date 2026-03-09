@@ -10,14 +10,14 @@ const { isMLServiceAvailable, getFullAnalysis, extractMLFeatures, classifyUser, 
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { limit = 10, refresh = 'false' } = req.query;
+        const { limit = 10, refresh = 'false', startDate, endDate } = req.query;
         const forceRefresh = refresh === 'true';
 
-        // Get AI-powered insights (with caching and fallback)
-        const insightsData = await getInsights(userId, forceRefresh);
+        // Get AI-powered insights (with caching and fallback) - pass date range for filtering
+        const insightsData = await getInsights(userId, forceRefresh, startDate, endDate);
 
-        // Get enhanced statistics
-        const stats = getEnhancedStats(userId);
+        // Get enhanced statistics (with optional date range)
+        const stats = getEnhancedStats(userId, startDate, endDate);
 
         res.json({
             source: insightsData.source,
@@ -30,7 +30,8 @@ router.get('/', authenticateToken, async (req, res) => {
             trends: insightsData.trends || identifyTrends(userId),
             encouragement: insightsData.encouragement,
             stats: stats,
-            generatedAt: insightsData.generatedAt
+            generatedAt: insightsData.generatedAt,
+            dateRange: startDate && endDate ? { startDate, endDate } : null
         });
     } catch (error) {
         console.error('Insights error:', error);
@@ -39,14 +40,25 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get enhanced statistics for insights
-function getEnhancedStats(userId) {
+function getEnhancedStats(userId, startDate = null, endDate = null) {
     const today = new Date();
     
-    // Use calendar month boundaries instead of rolling 30 days
-    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const thisMonthStartStr = thisMonthStart.toISOString().split('T')[0];
+    // Use custom date range if provided, otherwise use calendar month
+    let periodStartStr, periodEndStr;
+    let usingCustomRange = false;
     
-    // Use calendar week boundaries (Monday-Sunday)
+    if (startDate && endDate) {
+        periodStartStr = startDate;
+        periodEndStr = endDate;
+        usingCustomRange = true;
+    } else {
+        // Use calendar month boundaries
+        const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        periodStartStr = thisMonthStart.toISOString().split('T')[0];
+        periodEndStr = today.toISOString().split('T')[0];
+    }
+    
+    // Use calendar week boundaries (Monday-Sunday) for comparisons
     const dayOfWeek = today.getDay();
     const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     
@@ -71,17 +83,17 @@ function getEnhancedStats(userId) {
         return lower;
     };
 
-    // Category breakdown (raw from DB) - using calendar month
+    // Category breakdown (raw from DB) - using selected period
     const rawBreakdown = db.prepare(`
         SELECT category, 
                COUNT(*) as count,
                SUM(emissions) as total_emissions,
                AVG(emissions) as avg_emissions
         FROM activities 
-        WHERE user_id = ? AND date >= ?
+        WHERE user_id = ? AND date >= ? AND date <= ?
         GROUP BY category
         ORDER BY total_emissions DESC
-    `).all(userId, thisMonthStartStr);
+    `).all(userId, periodStartStr, periodEndStr);
 
     // Merge categories (energy → electricity, food → diet)
     const mergedMap = new Map();
@@ -129,14 +141,14 @@ function getEnhancedStats(userId) {
         ? Math.round(((thisWeekEmissions - lastWeekEmissions) / lastWeekEmissions) * 100) 
         : 0;
 
-    // Activity patterns (calendar month)
+    // Activity patterns (selected period)
     const activityCount = db.prepare(`
-        SELECT COUNT(*) as count FROM activities WHERE user_id = ? AND date >= ?
-    `).get(userId, thisMonthStartStr).count;
+        SELECT COUNT(*) as count FROM activities WHERE user_id = ? AND date >= ? AND date <= ?
+    `).get(userId, periodStartStr, periodEndStr).count;
 
     const daysActive = db.prepare(`
-        SELECT COUNT(DISTINCT date) as days FROM activities WHERE user_id = ? AND date >= ?
-    `).get(userId, thisMonthStartStr).days;
+        SELECT COUNT(DISTINCT date) as days FROM activities WHERE user_id = ? AND date >= ? AND date <= ?
+    `).get(userId, periodStartStr, periodEndStr).days;
 
     // Best performing category (lowest per-activity emissions)
     const bestCategory = breakdown.length > 0 

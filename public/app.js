@@ -332,7 +332,8 @@ function showSection(sectionId) {
             loadActivityLog();
             break;
         case 'insights':
-            loadInsights();
+            // Show placeholder - user must click Generate AI Analysis button
+            showInsightsPlaceholder();
             break;
         case 'goals':
             loadGoals();
@@ -1874,7 +1875,8 @@ function showAILoading(show = true) {
     }
 }
 
-async function loadInsights(forceRefresh = false) {
+// Show placeholder state before user clicks Generate
+function showInsightsPlaceholder() {
     const container = document.querySelector('#insights .insights-grid');
     if (!container) return;
     
@@ -1883,12 +1885,67 @@ async function loadInsights(forceRefresh = false) {
         return;
     }
     
-    // Show the AI loading overlay for force refresh or initial load
+    // Show instruction to generate insights
+    container.innerHTML = `
+        <div class="empty-state insights-placeholder">
+            <i class="fas fa-robot" style="font-size: 3rem; color: #9b59b6; margin-bottom: 1rem;"></i>
+            <h3>AI Analysis Ready</h3>
+            <p>Select a date range above and click <strong>"Generate AI Analysis"</strong> to get personalized insights for your carbon footprint.</p>
+            <p class="placeholder-hint"><i class="fas fa-info-circle"></i> The analysis will consider only activities logged within your selected dates.</p>
+        </div>
+    `;
+    
+    // Reset stats to placeholder values
+    resetInsightStats();
+}
+
+// Reset insight stats to placeholder state
+function resetInsightStats() {
+    const monthlyValue = document.getElementById('monthly-emissions-value');
+    if (monthlyValue) monthlyValue.textContent = '--';
+    
+    const daysActive = document.getElementById('days-active');
+    if (daysActive) daysActive.textContent = '--';
+    
+    const activityCount = document.getElementById('activity-count');
+    if (activityCount) activityCount.textContent = 'Select dates & generate';
+    
+    const vsGlobalValue = document.getElementById('vs-global-value');
+    if (vsGlobalValue) vsGlobalValue.textContent = '--%';
+    
+    const vsGlobalText = document.getElementById('vs-global-text');
+    if (vsGlobalText) vsGlobalText.textContent = 'Generate to compare';
+    
+    const weeklyChange = document.getElementById('weekly-change');
+    if (weeklyChange) weeklyChange.textContent = '-- vs last week';
+    
+    // Reset AI summary
+    const summaryEl = document.querySelector('.ai-summary-text');
+    if (summaryEl) summaryEl.innerHTML = 'Click "Generate AI Analysis" to get personalized insights for your selected date range.';
+}
+
+async function loadInsights(forceRefresh = false, startDate = null, endDate = null) {
+    const container = document.querySelector('#insights .insights-grid');
+    if (!container) return;
+    
+    if (!isLoggedIn()) {
+        container.innerHTML = '<div class="empty-state"><p>Please login to view personalized insights.</p></div>';
+        return;
+    }
+    
+    // Show the AI loading overlay
     showAILoading(true);
-    container.innerHTML = '<div class="loading-placeholder"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+    container.innerHTML = '<div class="loading-placeholder"><i class="fas fa-spinner fa-spin"></i> Generating AI analysis...</div>';
     
     try {
-        const url = forceRefresh ? '/insights?refresh=true' : '/insights';
+        // Build URL with optional date parameters
+        let url = '/insights';
+        const params = [];
+        if (forceRefresh) params.push('refresh=true');
+        if (startDate) params.push(`startDate=${startDate}`);
+        if (endDate) params.push(`endDate=${endDate}`);
+        if (params.length > 0) url += '?' + params.join('&');
+        
         const data = await apiRequest(url);
         showAILoading(false);
         
@@ -2031,7 +2088,14 @@ function renderInsights(data) {
     // Add refresh button handler
     const refreshBtn = document.querySelector('.refresh-insights-btn');
     if (refreshBtn) {
-        refreshBtn.onclick = () => loadInsights(true);
+        refreshBtn.onclick = () => {
+            // Get current date range from pickers if available
+            const startDateInput = document.getElementById('report-start-date');
+            const endDateInput = document.getElementById('report-end-date');
+            const startDate = startDateInput?.value || null;
+            const endDate = endDateInput?.value || null;
+            loadInsights(true, startDate, endDate);
+        };
     }
 }
 
@@ -3981,6 +4045,9 @@ function initReportDatePickers() {
     // Add validation listeners
     startDateInput.addEventListener('change', () => validateReportDateRange());
     endDateInput.addEventListener('change', () => validateReportDateRange());
+    
+    // Don't auto-load - show placeholder instead
+    // User must click "Generate AI Analysis" button
 }
 
 function validateReportDateRange() {
@@ -4006,6 +4073,34 @@ function validateReportDateRange() {
             noteEl.classList.remove('error');
         }
     }
+}
+
+// Generate AI Analysis for selected date range
+function generateAIAnalysis() {
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    
+    if (!startDateInput?.value || !endDateInput?.value) {
+        alert('Please select a date range first');
+        return;
+    }
+    
+    const start = new Date(startDateInput.value);
+    const end = new Date(endDateInput.value);
+    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff > 31) {
+        alert('Date range cannot exceed 31 days');
+        return;
+    }
+    
+    if (daysDiff < 0) {
+        alert('Start date must be before end date');
+        return;
+    }
+    
+    // Load insights for the selected date range
+    loadInsights(true, startDateInput.value, endDateInput.value);
 }
 
 // ===== XP History Functions =====

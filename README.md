@@ -23,9 +23,20 @@
 
 ## 📸 Screenshots
 
-| Dashboard | Insights | Goals |
-|:---------:|:--------:|:-----:|
-| Live stats, charts, leaderboard | AI-powered recommendations | Track sustainability goals |
+<p align="center">
+  <img src="assets/dashboard.png" alt="Dashboard" width="80%"/>
+</p>
+<p align="center"><em>Dashboard — Live stats, charts, and leaderboard</em></p>
+
+<p align="center">
+  <img src="assets/insights.png" alt="Insights" width="80%"/>
+</p>
+<p align="center"><em>Insights — AI-powered recommendations</em></p>
+
+<p align="center">
+  <img src="assets/goals.png" alt="Goals" width="80%"/>
+</p>
+<p align="center"><em>Goals — Track your sustainability targets</em></p>
 
 ---
 

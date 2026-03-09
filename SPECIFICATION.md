@@ -659,7 +659,7 @@ The system prompt instructs the AI to:
 
 ```bash
 # Clone repository
-git clone https://github.com/AbhiramK01/CarbonWise.git
+git clone https://github.com/YOUR_USERNAME/CarbonWise.git
 cd CarbonWise
 
 # Install dependencies
@@ -726,11 +726,11 @@ CMD ["node", "server.js"]
 
 ## Contact & Support
 
-**Repository**: https://github.com/AbhiramK01/CarbonWise
+**Repository**: https://github.com/YOUR_USERNAME/CarbonWise
 
-**Author**: AbhiramK01
+**Issues**: Submit via GitHub Issues
 
 ---
 
-*Document generated: March 5, 2026*
+*CarbonWise - Carbon Footprint Tracking Application*
 *CarbonWise Version: 1.0.0*

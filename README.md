@@ -319,6 +319,17 @@ CarbonWise/
 
 ---
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [SPECIFICATION.md](SPECIFICATION.md) | Full technical & feature specification |
+| [docs/STARTUP-GUIDE.md](docs/STARTUP-GUIDE.md) | Step-by-step setup guide for all platforms |
+| [docs/ML-LLM-ARCHITECTURE.md](docs/ML-LLM-ARCHITECTURE.md) | Hybrid ML + LLM architecture details |
+| [ml-service/README.md](ml-service/README.md) | Python ML microservice documentation |
+
+---
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -332,6 +343,14 @@ CarbonWise/
 ## 📄 License
 
 This project is licensed under the **ISC License**.
+
+---
+
+## 👤 Author
+
+**Abhiram K**
+
+- GitHub: [@AbhiramK01](https://github.com/AbhiramK01)
 
 ---
 

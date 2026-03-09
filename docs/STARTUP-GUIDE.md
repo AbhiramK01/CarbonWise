@@ -41,7 +41,7 @@ ollama --version  # Optional
 
 **macOS/Linux/Windows:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/CarbonWise.git
+git clone https://github.com/AbhiramK01/CarbonWise.git
 cd CarbonWise
 ```
 

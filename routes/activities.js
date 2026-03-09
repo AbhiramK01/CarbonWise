@@ -50,7 +50,7 @@ const EMISSION_FACTORS = {
 // Get all activities for user
 router.get('/', authenticateToken, (req, res) => {
     try {
-        const { date, startDate, endDate, category, limit = 50, offset = 0 } = req.query;
+        const { date, startDate, endDate, category } = req.query;
 
         let query = 'SELECT * FROM activities WHERE user_id = ?';
         const params = [req.user.id];
@@ -68,8 +68,7 @@ router.get('/', authenticateToken, (req, res) => {
             params.push(category);
         }
 
-        query += ' ORDER BY date DESC, created_at DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), parseInt(offset));
+        query += ' ORDER BY date DESC, created_at DESC';
 
         const rawActivities = db.prepare(query).all(...params);
         
@@ -93,7 +92,7 @@ router.get('/', authenticateToken, (req, res) => {
         }
         const total = db.prepare(countQuery).get(...countParams).count;
 
-        res.json({ activities, total, limit: parseInt(limit), offset: parseInt(offset) });
+        res.json({ activities, total });
     } catch (error) {
         console.error('Get activities error:', error);
         res.status(500).json({ error: 'Failed to fetch activities', message: error.message });

@@ -842,8 +842,6 @@ CMD ["node", "server.js"]
 
 ## Contact & Support
 
-**Author**: Abhiram K
-
 **Repository**: https://github.com/AbhiramK01/CarbonWise
 
 **Issues**: Submit via GitHub Issues

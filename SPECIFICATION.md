@@ -69,8 +69,8 @@ CarbonWise enables users to:
 | **Authentication** | JWT (jsonwebtoken) | User authentication |
 | **Password Hashing** | bcryptjs | Secure password storage |
 | **AI/LLM** | Ollama (local) | AI-powered insights |
-| **LLM Model** | llama3.1:8b | Default AI model |
-
+| **LLM Model** | llama3.1:8b | Default AI model || **ML Service** | Python Flask + scikit-learn | User clustering, prediction, anomaly detection |
+| **ML Algorithms** | K-Means, Random Forest, Isolation Forest | ML models |
 ### Project Structure
 
 ```
@@ -93,10 +93,18 @@ CarbonWise/
 ├── utils/
 │   ├── ollama.js          # Ollama LLM client
 │   ├── insights-engine.js # Insights generation logic
-│   └── gamification.js    # XP, levels, badges system
+│   ├── gamification.js    # XP, levels, badges system
+│   └── ml-client.js       # Python ML service HTTP client
+├── ml-service/            # Python ML microservice
+│   ├── app.py             # Flask API server (port 5001)
+│   ├── train_models.py    # Model training with hyperparameter tuning
+│   ├── generate_data.py   # Synthetic training data generator
+│   ├── requirements.txt   # Python dependencies
+│   ├── models/            # Trained model files (.pkl)
+│   └── data/              # Training datasets
 └── public/
     ├── index.html         # Single-page application
-    ├── app.js             # Frontend JavaScript (~2400 lines)
+    ├── app.js             # Frontend JavaScript (~3600 lines)
     └── styles.css         # Styles (~2700 lines)
 ```
 
@@ -122,6 +130,7 @@ JWT_SECRET=your_secret_key          # JWT signing key
 OLLAMA_URL=http://localhost:11434   # Ollama server URL
 OLLAMA_MODEL=llama3.1:8b            # AI model to use
 OLLAMA_TIMEOUT=60000                # Request timeout (ms)
+ML_SERVICE_URL=http://localhost:5001  # Python ML microservice URL
 ```
 
 ---
@@ -137,6 +146,7 @@ OLLAMA_TIMEOUT=60000                # Request timeout (ms)
 | **Session** | 7-day JWT token expiry |
 | **Auto-logout** | On 401/403 API responses |
 | **Password Storage** | bcrypt with salt rounds = 10 |
+| **Profile Editing** | Edit username/email with uniqueness validation |
 
 ### 2. Carbon Calculator
 
@@ -183,6 +193,7 @@ Interactive calculator with 5 tabs:
 | **View Modes** | Daily, Weekly, Monthly views |
 | **Date Navigation** | Previous/next day/week/month buttons |
 | **Edit/Delete** | Inline editing and deletion |
+| **XP Deduction** | Deleting an activity deducts the earned XP |
 | **Summary Stats** | Total activities, emissions, carbon saved |
 | **Auto-save from Calculator** | Save calculator results as activities |
 
@@ -197,6 +208,8 @@ Interactive calculator with 5 tabs:
 | **Emissions Chart** | Line chart (Week/Month/Year views) |
 | **Category Chart** | Doughnut chart by category |
 | **Progress Comparison** | User vs 2030 target (2 tons/year) |
+| **Theme Toggle** | Dark/Light mode toggle button in navbar |
+| **Leaderboard Widget** | Top users by XP with rankings |
 
 ### 5. AI Insights
 
@@ -212,6 +225,24 @@ Powered by local Ollama LLM:
 | **Trend Analysis** | Detecting increasing/decreasing patterns |
 | **Fallback Mode** | Rule-based insights when AI unavailable |
 
+#### ML-Powered Features (Python Microservice)
+
+| Feature | Algorithm | Output |
+|---------|-----------|--------|
+| **User Classification** | K-Means Clustering | Profile: `commute_heavy`, `diet_heavy`, `energy_heavy`, `balanced`, `eco_conscious` |
+| **Emission Prediction** | Random Forest Regressor | Daily/weekly/monthly CO₂ forecasts with confidence |
+| **Anomaly Detection** | Isolation Forest | Flags unusual emission patterns |
+| **Smart Recommendations** | Cluster-based | Personalized tips based on similar users |
+
+#### Detailed Reports
+
+Generate comprehensive reports with:
+- **Executive Summary** (AI-generated)
+- **Category Breakdown** with percentages
+- **Trend Analysis** (week-over-week, month-over-month)
+- **ML Insights** (cluster, predictions, anomalies)
+- **Date Range Filtering** (custom start/end dates)
+
 #### AI Output Format
 ```json
 {
@@ -226,6 +257,11 @@ Powered by local Ollama LLM:
   "weeklyChallenge": {
     "title": "This week: Replace 2 car trips with transit",
     "targetSavings": 20
+  },
+  "ml": {
+    "classification": { "cluster": "commute_heavy", "confidence": 0.89 },
+    "prediction": { "daily": 12.5, "weekly": 87.5, "monthly": 375.0 },
+    "anomaly": { "isAnomaly": false, "score": 0.12 }
   }
 }
 ```
@@ -239,6 +275,7 @@ Powered by local Ollama LLM:
 | **Progress Tracking** | Automatic progress updates |
 | **XP Rewards** | Earn XP upon completion |
 | **Goal Cards** | Visual progress bars and countdown |
+| **Completed Section** | Past goals with green progress bars |
 
 ### 7. Gamification
 
@@ -250,6 +287,14 @@ Powered by local Ollama LLM:
 | Complete goal | 50-200 XP |
 | Earn badge | 25-500 XP |
 | Level up | Bonus XP |
+| Delete activity | -10 XP (deduction) |
+
+#### XP History
+Track all XP gains/deductions with:
+- **Source Type**: Activity, goal, badge, streak
+- **Amount**: XP earned or deducted
+- **Timestamp**: When XP was earned
+- **Linked Item**: Activity/goal/badge that triggered it
 
 #### Level System (15 levels)
 | Level | XP Required | Title |
@@ -399,6 +444,18 @@ insights (
     created_at TEXT,
     expires_at TEXT
 )
+
+-- XP History (track XP gains/deductions over time)
+xp_history (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL (FK → users),
+    amount INTEGER NOT NULL,
+    source_type TEXT NOT NULL,  -- 'activity', 'goal', 'badge', 'streak', 'deduction'
+    source_id INTEGER,          -- ID of activity/goal/badge
+    activity_id INTEGER,        -- Direct link to activity (if applicable)
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
 ```
 
 ### Indexes
@@ -406,6 +463,7 @@ insights (
 CREATE INDEX idx_activities_user_date ON activities(user_id, date);
 CREATE INDEX idx_goals_user_status ON goals(user_id, status);
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_xp_history_user ON xp_history(user_id, created_at);
 ```
 
 ---
@@ -419,16 +477,16 @@ CREATE INDEX idx_users_email ON users(email);
 | POST | `/api/auth/register` | Create new user |
 | POST | `/api/auth/login` | Authenticate user |
 | GET | `/api/auth/me` | Get current user info |
-| PUT | `/api/auth/profile` | Update profile |
+| PUT | `/api/auth/me` | Update profile (username/email with uniqueness check) |
 
 ### Activity Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/activities` | List activities (with filters) |
-| POST | `/api/activities` | Create new activity |
+| POST | `/api/activities` | Create new activity (+10 XP) |
 | PUT | `/api/activities/:id` | Update activity |
-| DELETE | `/api/activities/:id` | Delete activity |
+| DELETE | `/api/activities/:id` | Delete activity (-10 XP deduction) |
 
 ### Stats Endpoints
 
@@ -436,13 +494,16 @@ CREATE INDEX idx_users_email ON users(email);
 |--------|----------|-------------|
 | GET | `/api/stats/dashboard` | Dashboard statistics |
 | GET | `/api/stats/charts` | Chart data (week/month/year) |
+| GET | `/api/stats/xp-history` | XP history with pagination |
 
-### Insights Endpoint
+### Insights Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/insights` | AI-powered insights |
 | GET | `/api/insights?refresh=true` | Force refresh insights |
+| GET | `/api/insights/report/detailed` | Full report with ML analysis |
+| GET | `/api/insights/report/detailed?startDate=X&endDate=Y` | Date-filtered report |
 
 ### Goals Endpoints
 
@@ -505,6 +566,60 @@ The system prompt instructs the AI to:
 
 ---
 
+## ML Service Integration
+
+### Python Microservice Architecture
+
+CarbonWise includes a Python Flask microservice (`ml-service/`) for machine learning analysis.
+
+#### Setup
+```bash
+cd ml-service
+pip install -r requirements.txt
+python generate_data.py    # Generate 10,000 synthetic users
+python train_models.py     # Train ML models
+python app.py              # Start on port 5001
+```
+
+### ML Models
+
+#### 1. User Classification (K-Means Clustering)
+- **Training Data**: 10,000 synthetic users with realistic emission patterns
+- **Clusters**: 5 lifestyle profiles
+  - `commute_heavy`: Transportation >40% of emissions
+  - `diet_heavy`: Food/dietary choices dominate
+  - `energy_heavy`: Electricity usage dominates
+  - `balanced`: Relatively even distribution
+  - `eco_conscious`: Low emissions across all categories
+- **Silhouette Score**: ~0.66 (excellent cluster separation)
+
+#### 2. Emission Prediction (Random Forest Regressor)
+- **Features**: Historical emissions by category, activity counts, trends
+- **Outputs**: Daily, weekly, monthly CO₂ forecasts
+- **R² Score**: ~0.91 (91% variance explained)
+- **MAE**: ~3.78 kg CO₂/day
+
+#### 3. Anomaly Detection (Isolation Forest)
+- **Purpose**: Identify unusual emission patterns
+- **Use Cases**: 
+  - Data entry errors
+  - Sudden lifestyle changes
+  - Opportunities for improvement
+- **Output**: Anomaly flag + confidence score
+
+### ML API Endpoints (Port 5001)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Service health check |
+| POST | `/classify` | Classify user into lifestyle cluster |
+| POST | `/predict` | Predict future emissions |
+| POST | `/detect-anomaly` | Check for unusual patterns |
+| POST | `/recommendations` | Get personalized recommendations |
+| POST | `/analyze` | Full analysis (all above combined) |
+
+---
+
 ## Gamification System
 
 ### XP Award Events
@@ -517,6 +632,7 @@ The system prompt instructs the AI to:
 | Complete goal | 50-200 | Based on difficulty |
 | Earn badge | 25-500 | Badge-specific |
 | Level up | Bonus | Progressive |
+| Delete activity | -10 | XP deduction |
 
 ### Streak System
 

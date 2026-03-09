@@ -160,6 +160,8 @@ This creates **5 demo users** with 60+ days of activity history:
 
 > **Password:** `demo123` for all accounts
 
+📖 **Need more help?** See the [Startup Guide](docs/STARTUP-GUIDE.md) for detailed platform-specific instructions.
+
 ---
 
 ## 🤖 AI Setup (Optional)
@@ -207,6 +209,8 @@ python app.py
 ```
 
 See [ml-service/README.md](ml-service/README.md) for detailed documentation.
+
+📐 **Architecture details:** [ML-LLM-ARCHITECTURE.md](docs/ML-LLM-ARCHITECTURE.md) explains the hybrid approach.
 
 ---
 
@@ -316,17 +320,6 @@ CarbonWise/
 | `OLLAMA_MODEL` | `llama3.1:8b` | LLM model name |
 | `OLLAMA_TIMEOUT` | `60000` | Request timeout (ms) |
 | `ML_SERVICE_URL` | `http://localhost:5001` | Python ML service URL |
-
----
-
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [SPECIFICATION.md](SPECIFICATION.md) | Full technical & feature specification |
-| [docs/STARTUP-GUIDE.md](docs/STARTUP-GUIDE.md) | Step-by-step setup guide for all platforms |
-| [docs/ML-LLM-ARCHITECTURE.md](docs/ML-LLM-ARCHITECTURE.md) | Hybrid ML + LLM architecture details |
-| [ml-service/README.md](ml-service/README.md) | Python ML microservice documentation |
 
 ---
 

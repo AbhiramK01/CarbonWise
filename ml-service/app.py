@@ -228,7 +228,7 @@ def detect_anomaly():
     Input: Same as /predict endpoint
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         required = ['transport_pct', 'electricity_pct', 'food_pct', 'waste_pct',
                    'transport_freq', 'electricity_freq', 'food_freq', 'waste_freq',
@@ -253,7 +253,7 @@ def detect_anomaly():
         prediction = MODELS['isolation_forest'].predict(X_scaled)[0]
         score = MODELS['isolation_forest'].score_samples(X_scaled)[0]
         
-        is_anomaly = prediction == -1
+        is_anomaly = bool(prediction == -1)
         
         # Determine which category is anomalous
         anomaly_reason = None
@@ -273,7 +273,14 @@ def detect_anomaly():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"Anomaly endpoint fallback due to error: {e}")
+        return jsonify({
+            'is_anomaly': False,
+            'anomaly_score': 0.0,
+            'reason': None,
+            'recommendation': 'Review recent activities for unusual patterns',
+            'fallback': True
+        })
 
 @app.route('/recommend', methods=['POST'])
 def get_recommendations():

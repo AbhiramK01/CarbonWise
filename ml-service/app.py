@@ -6,6 +6,7 @@ Flask API for ML-powered insights
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import gzip
 import pickle
 import numpy as np
 import os
@@ -32,28 +33,45 @@ CLUSTER_DESCRIPTIONS = {
 def load_models():
     """Load all trained models from disk"""
     global MODELS, CLUSTER_LABELS
-    
+
     model_files = [
         'kmeans', 'cluster_scaler',
         'random_forest', 'prediction_scaler',
         'isolation_forest', 'anomaly_scaler'
     ]
-    
+
+    def load_pickle_file(filepath):
+        if filepath.endswith('.gz'):
+            with gzip.open(filepath, 'rb') as f:
+                return pickle.load(f)
+
+        with open(filepath, 'rb') as f:
+            return pickle.load(f)
+
     for name in model_files:
-        filepath = os.path.join(MODEL_DIR, f'{name}.pkl')
-        if os.path.exists(filepath):
-            with open(filepath, 'rb') as f:
-                MODELS[name] = pickle.load(f)
-            print(f"✓ Loaded {name}")
+        candidates = [
+            os.path.join(MODEL_DIR, f'{name}.pkl.gz'),
+            os.path.join(MODEL_DIR, f'{name}.pkl')
+        ]
+
+        for filepath in candidates:
+            if os.path.exists(filepath):
+                MODELS[name] = load_pickle_file(filepath)
+                print(f"✓ Loaded {name}")
+                break
         else:
-            print(f"⚠ Model not found: {filepath}")
+            print(f"⚠ Model not found: {candidates[0]} or {candidates[1]}")
     
     # Load dynamic cluster labels
-    labels_path = os.path.join(MODEL_DIR, 'cluster_labels.pkl')
-    if os.path.exists(labels_path):
-        with open(labels_path, 'rb') as f:
-            CLUSTER_LABELS.update(pickle.load(f))
-        print(f"✓ Loaded cluster_labels: {CLUSTER_LABELS}")
+    labels_candidates = [
+        os.path.join(MODEL_DIR, 'cluster_labels.pkl.gz'),
+        os.path.join(MODEL_DIR, 'cluster_labels.pkl')
+    ]
+    for labels_path in labels_candidates:
+        if os.path.exists(labels_path):
+            CLUSTER_LABELS.update(load_pickle_file(labels_path))
+            print(f"✓ Loaded cluster_labels: {CLUSTER_LABELS}")
+            break
     else:
         # Fallback to default labels
         CLUSTER_LABELS.update({

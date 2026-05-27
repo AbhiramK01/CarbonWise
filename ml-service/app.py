@@ -283,7 +283,7 @@ def get_recommendations():
     Input: Same as /classify endpoint plus current emissions
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         # First classify the user
         X = np.array([[
@@ -344,7 +344,20 @@ def get_recommendations():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        fallback_recommendations = [
+            {'action': 'Focus on your highest emission category', 'potential_reduction': '15%', 'priority': 'high'},
+            {'action': 'Set weekly reduction goals for each area', 'potential_reduction': '10%', 'priority': 'medium'},
+            {'action': 'Track daily to identify patterns', 'potential_reduction': '5%', 'priority': 'medium'},
+            {'action': 'Start with easiest changes first', 'potential_reduction': '8%', 'priority': 'high'}
+        ]
+        print(f"Recommendation endpoint fallback due to error: {e}")
+        return jsonify({
+            'cluster': 'balanced',
+            'profile_description': CLUSTER_DESCRIPTIONS.get('balanced', ''),
+            'recommendations': fallback_recommendations,
+            'total_potential_reduction': sum(int(r['potential_reduction'].replace('%', '')) for r in fallback_recommendations[:2]),
+            'fallback': True
+        })
 
 @app.route('/analyze', methods=['POST'])
 def full_analysis():

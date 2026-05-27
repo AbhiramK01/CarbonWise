@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  web:
+    image: ghcr.io/<OWNER>/carbonwise-web:latest
+    restart: unless-stopped
+    ports:
+      - "80:3000"
+    environment:
+      - ML_SERVICE_URL=http://ml:5001
+    depends_on:
+      - ml
+
+  ml:
+    image: ghcr.io/<OWNER>/carbonwise-ml:latest
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001

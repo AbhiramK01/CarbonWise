@@ -1,0 +1,28 @@
+name: Deploy to Fly
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions@v1
+
+      - name: Deploy carbonwise-web to Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --app "${{ secrets.FLY_APP_WEB }}" --image=ghcr.io/${{ github.repository_owner }}/carbonwise-web:latest --config fly.toml --detach
+
+      - name: Deploy carbonwise-ml to Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          cd ml-service
+          flyctl deploy --app "${{ secrets.FLY_APP_ML }}" --image=ghcr.io/${{ github.repository_owner }}/carbonwise-ml:latest --config fly.toml --detach

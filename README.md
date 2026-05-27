@@ -118,6 +118,23 @@ Generate comprehensive PDF-ready reports with:
 - Python 3.8+ (optional, for ML service)
 - Ollama (optional, for AI insights)
 
+## 🚦 CI/CD Pipeline
+
+This repository includes a GitHub Actions pipeline in [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml) that:
+
+- validates JavaScript syntax across the app
+- installs and compiles the Python ML service
+- smoke tests the Node API health endpoint
+- smoke tests the ML service endpoints
+- builds and publishes Docker images to GitHub Container Registry on pushes to `main`
+
+The generated images are:
+
+- `ghcr.io/<owner>/carbonwise-web`
+- `ghcr.io/<owner>/carbonwise-ml`
+
+If you want the pipeline to deploy to a specific environment such as Render, Railway, Azure, or a VPS, I can wire that stage in next.
+
 ### Installation
 
 ```bash

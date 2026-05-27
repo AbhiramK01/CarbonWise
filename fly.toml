@@ -1,5 +1,6 @@
 # Fly.io config for carbonwise-web
 app = "carbonwise-web"
+primary_region = "iad"
 
 [build]
   # Leave image blank so Fly builds using the repository Dockerfile by default

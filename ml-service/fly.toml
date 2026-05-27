@@ -1,5 +1,6 @@
 # Fly.io config for carbonwise-ml
 app = "carbonwise-ml"
+primary_region = "iad"
 
 [build]
   image = ""
